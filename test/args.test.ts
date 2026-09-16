@@ -58,4 +58,8 @@ describe("parseArgs", () => {
   test("providers", () => {
     expect(parseArgs(["providers"])).toEqual({ kind: "providers" });
   });
+
+  test("threads", () => {
+    expect(parseArgs(["threads"])).toEqual({ kind: "threads" });
+  });
 });

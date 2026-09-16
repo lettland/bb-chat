@@ -7,6 +7,7 @@ import { parseArgs } from "./cli/args.ts";
 import { runDoctor } from "./cli/doctor.ts";
 import { runInit } from "./cli/init.ts";
 import { runProviders } from "./cli/providers.ts";
+import { runThreads } from "./cli/threads.ts";
 import { resolveConfig } from "./config.ts";
 import { isVchError, VchError } from "./errors.ts";
 import type { ChatContext } from "./tui/app.ts";
@@ -20,6 +21,7 @@ Usage:
   vch                     Open the current directory's project (creates it if new)
   vch -g, --global        Global home: all projects
   vch <thread-id>         Open a specific thread (thr_...)
+  vch threads             List this project's threads and their ids
   vch new ["prompt"]      Start a thread (interactive picker if no prompt)
       [--provider <id>] [--model <id>] [--mode <mode>]
   vch providers           List providers, models, and modes (values for vch new)
@@ -132,6 +134,8 @@ async function main(): Promise<number> {
       return runDoctor();
     case "providers":
       return runProviders();
+    case "threads":
+      return runThreads();
     case "chat":
       return runChatCommand(command.global, command.threadId);
     case "new":

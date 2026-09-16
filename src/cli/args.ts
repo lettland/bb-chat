@@ -10,6 +10,7 @@ export type Command =
     }
   | { kind: "init"; yes: boolean; force: boolean; print: boolean }
   | { kind: "providers" }
+  | { kind: "threads" }
   | { kind: "doctor" }
   | { kind: "help" }
   | { kind: "version" };
@@ -40,6 +41,7 @@ export function parseArgs(argv: string[]): Command {
   if (first === "-v" || first === "--version" || first === "version") return { kind: "version" };
   if (first === "doctor") return { kind: "doctor" };
   if (first === "providers") return { kind: "providers" };
+  if (first === "threads") return { kind: "threads" };
 
   if (first === "init") {
     return {
