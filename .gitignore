@@ -1,4 +1,5 @@
 node_modules/
 dist/
 *.log
+*.bun-build
 .DS_Store
