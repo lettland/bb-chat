@@ -21,6 +21,17 @@ const COLS_OVERHEAD = 4; // transcript padding + margins
  * composer is always pinned and framed so the input is obvious.
  */
 export class ThreadView implements View {
+  /** Composer inputs intercepted as commands; everything else (incl. "/paths") sends. */
+  private static readonly COMMANDS = new Set([
+    "exit",
+    "quit",
+    "q",
+    "back",
+    "diff",
+    "terminals",
+    "term",
+    "help",
+  ]);
   readonly title = "thread";
   private host!: ViewHost;
   private box: BoxRenderable | null = null;
@@ -152,8 +163,6 @@ export class ThreadView implements View {
 
   private runCommand(name: string): void {
     switch (name) {
-      case "":
-        return; // bare slash: ignore
       case "exit":
       case "quit":
       case "q":
@@ -169,21 +178,20 @@ export class ThreadView implements View {
       case "term":
         void this.host.navigator.push(new TerminalsView(this.sdk, this.threadId));
         return;
-      case "help":
+      default: // "help" and anything else routed here
         if (this.status) {
           this.status.content =
             "commands: /exit /back /diff /terminals · keys: esc back · ctrl+c quit · PgUp/PgDn/Home/End scroll";
         }
         return;
-      default:
-        if (this.status) this.status.content = `unknown command: /${name} (try /help)`;
-        return;
     }
   }
 
   private async submit(text: string): Promise<void> {
+    // Only KNOWN commands are intercepted; other leading-slash input (e.g. an
+    // absolute path) is sent as a normal message.
     const command = parseSlashCommand(text);
-    if (command) {
+    if (command && ThreadView.COMMANDS.has(command.name)) {
       this.runCommand(command.name);
       return;
     }

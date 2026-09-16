@@ -40,7 +40,7 @@ export async function runChat(ctx: ChatContext): Promise<void> {
   // chars sit in source. renderer.destroy()/suspend() can hang in some runtimes,
   // so we restore manually and force-exit instead of relying on them.
   const ESC = String.fromCharCode(0x1b);
-  const RESTORE = `${ESC}[?1049l${ESC}[?25h${ESC}[?1000l${ESC}[?1002l${ESC}[?1003l${ESC}[?1006l${ESC}[?2004l${ESC}[0m`;
+  const RESTORE = `${ESC}[?1049l${ESC}[?25h${ESC}[?1000l${ESC}[?1002l${ESC}[?1003l${ESC}[?1006l${ESC}[?2004l${ESC}[?1l${ESC}>${ESC}[0m`;
   let exiting = false;
   const shutdown = (): void => {
     if (exiting) return;
