@@ -1,5 +1,6 @@
 import { candidateServerUrls, detect, detectionToConfig } from "../bb/detect.ts";
-import { configPath, writeConfigFile } from "../config.ts";
+import { createSdk } from "../bb/sdk.ts";
+import { configPath, parseCommand, writeConfigFile } from "../config.ts";
 import type { VchConfig } from "../types.ts";
 
 export interface InitOptions {
@@ -8,39 +9,94 @@ export interface InitOptions {
   print: boolean;
 }
 
-function summarize(config: VchConfig, detection: { runningServerUrl: string | null }): string {
-  const reachable = detection.runningServerUrl === config.serverUrl;
-  const lines = [
+/** Minimal line-prompter, injected so the interactive flow stays testable. */
+export interface InitPrompter {
+  text(question: string, def: string): string;
+  yesNo(question: string, def: boolean): boolean;
+}
+
+/** Interactively refine a config. Pure given the prompter. */
+export function promptConfig(config: VchConfig, prompter: InitPrompter): VchConfig {
+  const serverUrl = prompter.text("BB server URL", config.serverUrl) || config.serverUrl;
+  const startRaw = prompter.text(
+    "Start command to launch BB when it is down (blank = none)",
+    config.startCommand ? config.startCommand.join(" ") : "",
+  );
+  const startCommand = parseCommand(startRaw);
+  const autoStart = startCommand
+    ? prompter.yesNo("Auto-start BB with that command when it is unreachable?", config.autoStart)
+    : false;
+  return { ...config, serverUrl, startCommand, autoStart };
+}
+
+/** Bun-backed prompter using the global prompt(). */
+const bunPrompter: InitPrompter = {
+  text(question, def) {
+    const answer = prompt(question, def);
+    const value = (answer ?? def).trim();
+    return value.length > 0 ? value : def;
+  },
+  yesNo(question, def) {
+    const answer = prompt(`${question} ${def ? "[Y/n]" : "[y/N]"}`, "");
+    const value = (answer ?? "").trim().toLowerCase();
+    if (value.length === 0) return def;
+    return value === "y" || value === "yes";
+  },
+};
+
+function summarize(config: VchConfig, reachable: boolean): string {
+  return [
     `  serverUrl     ${config.serverUrl}${reachable ? "  (reachable)" : ""}`,
-    `  bbCommand     ${config.bbCommand ? config.bbCommand.join(" ") : "(none detected)"}`,
-    `  startCommand  ${config.startCommand ? config.startCommand.join(" ") : "(none detected)"}`,
+    `  bbCommand     ${config.bbCommand ? config.bbCommand.join(" ") : "(none)"}`,
+    `  startCommand  ${config.startCommand ? config.startCommand.join(" ") : "(none)"}`,
     `  autoStart     ${config.autoStart}`,
-  ];
-  return lines.join("\n");
+  ].join("\n");
+}
+
+/** Best-effort: ask a reachable server what it is (it exposes version/source, not its launcher). */
+async function serverInfo(serverUrl: string): Promise<string | null> {
+  try {
+    const v = await createSdk(serverUrl).system.version();
+    return `BB ${v.currentVersion} (${v.isDevelopment ? "development" : v.source})`;
+  } catch {
+    return null;
+  }
 }
 
 /**
- * `vch init` — detect a system-local BB and write an editable config. Never
- * launches anything; `autoStart` defaults to `false`. The written file is meant
- * to be hand-edited (e.g. to point at a local dev BB instead of an official one).
+ * Explain the command fields. BB does not expose its own launch command over the
+ * API, and an npm/desktop install has no `bb-app` CLI on PATH — so empty
+ * bbCommand/startCommand is expected. They are only needed to auto-launch BB when
+ * it is unreachable; a reachable server needs neither.
+ */
+function commandNote(config: VchConfig, reachable: boolean): string {
+  if (config.startCommand) return "";
+  if (reachable) {
+    return "\nNo start command detected — not needed while BB is reachable. It is only used to auto-launch BB when it is down; the server doesn't expose its own launch command, so it can't be filled in automatically. Set startCommand + autoStart yourself if you want vch to launch BB.\n";
+  }
+  return "\nBB was not reachable and no launch command was detected. Start BB yourself, or set startCommand + autoStart in the config so vch can launch it.\n";
+}
+
+/**
+ * `vch init` — detect a system-local BB and write an editable config. Interactive
+ * by default (review/edit each field); `--yes` or a non-TTY stdin writes the
+ * detected values without prompting. Never launches anything; `autoStart`
+ * defaults to `false`.
  */
 export async function runInit(
   options: InitOptions,
   env: NodeJS.ProcessEnv = process.env,
+  prompter: InitPrompter = bunPrompter,
 ): Promise<number> {
   const candidates = candidateServerUrls(env);
   const detection = await detect(candidates);
-  const config = detectionToConfig(detection, candidates[0]);
+  let config = detectionToConfig(detection, candidates[0]);
 
-  // An explicitly-requested URL is the user's intent and wins over whatever
-  // stray server happened to answer detection (e.g. an unrelated BB on the
-  // default port while the requested one is momentarily down).
+  // An explicitly-requested URL wins over whatever stray server answered detection.
   const explicitUrl = env.VCH_SERVER_URL?.trim() || env.BB_SERVER_URL?.trim() || null;
-  const overrodeReachable =
-    explicitUrl !== null &&
-    detection.runningServerUrl !== null &&
-    detection.runningServerUrl !== explicitUrl;
   if (explicitUrl) config.serverUrl = explicitUrl;
+
+  const reachable = detection.runningServerUrl === config.serverUrl;
   const path = configPath(env);
 
   if (options.print) {
@@ -48,24 +104,29 @@ export async function runInit(
     return 0;
   }
 
-  const overrideNote = overrodeReachable
-    ? `\nNote: kept your requested ${explicitUrl}; a different BB is reachable at ${detection.runningServerUrl}.\n`
-    : "";
-
+  const info = reachable ? await serverInfo(config.serverUrl) : null;
+  const interactive = !options.yes && Boolean(process.stdin.isTTY);
   const exists = await Bun.file(path).exists();
-  if (exists && !options.force) {
+
+  if (interactive) {
+    if (info) process.stdout.write(`Detected ${info} at ${config.serverUrl}\n`);
+    if (exists && !options.force) {
+      if (!prompter.yesNo(`Config exists at ${path}. Overwrite?`, false)) {
+        process.stdout.write("Keeping the existing config.\n");
+        return 0;
+      }
+    }
+    config = promptConfig(config, prompter);
+  } else if (exists && !options.force) {
     process.stdout.write(
-      `Config already exists at ${path}.\nDetected settings (not written — pass --force to overwrite):\n${summarize(config, detection)}\n${overrideNote}`,
+      `Config already exists at ${path}.\nDetected settings (not written — pass --force to overwrite, or run without --yes to edit):\n${summarize(config, reachable)}\n`,
     );
     return 0;
   }
 
   await writeConfigFile(config, env);
-  process.stdout.write(`Wrote ${path}\n${summarize(config, detection)}\n${overrideNote}`);
-  if (!detection.runningServerUrl) {
-    process.stdout.write(
-      "\nBB was not reachable during detection. Start BB, or edit the config to set a startCommand and autoStart.\n",
-    );
-  }
+  process.stdout.write(
+    `Wrote ${path}\n${info ? `${info}\n` : ""}${summarize(config, reachable)}\n${commandNote(config, reachable)}`,
+  );
   return 0;
 }
