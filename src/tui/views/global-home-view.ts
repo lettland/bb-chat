@@ -4,6 +4,7 @@ import type { BBSdk } from "../../bb/sdk.ts";
 import type { View, ViewHost } from "../navigator.ts";
 import { formatProjectRow, type ProjectRow, toProjectRows } from "../project-list-render.ts";
 import { clamp, errorText } from "../util.ts";
+import { PluginsView } from "./plugins-view.ts";
 import { ThreadListView } from "./thread-list-view.ts";
 
 /**
@@ -28,7 +29,7 @@ export class GlobalHomeView implements View {
     box.add(this.body);
     box.add(
       new TextRenderable(host.renderer, {
-        content: "↑/↓ move · enter open · r refresh · q quit",
+        content: "↑/↓ move · enter open · p plugins · r refresh · q quit",
       }),
     );
     host.renderer.root.add(box);
@@ -57,6 +58,9 @@ export class GlobalHomeView implements View {
       case "return":
       case "enter":
         this.open();
+        break;
+      case "p":
+        void this.host.navigator.push(new PluginsView(this.sdk));
         break;
       case "r":
         void this.refresh();

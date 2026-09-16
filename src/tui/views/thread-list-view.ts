@@ -4,6 +4,7 @@ import { listThreads, type Unsubscribe, watchProject } from "../../bb/threads.ts
 import type { View, ViewHost } from "../navigator.ts";
 import { formatThreadRow, renderThreadList, type ThreadRow } from "../thread-list-render.ts";
 import { clamp, errorText } from "../util.ts";
+import { SkillsView } from "./skills-view.ts";
 import { SpawnWizardView } from "./spawn-wizard-view.ts";
 import { ThreadView } from "./thread-view.ts";
 
@@ -34,7 +35,7 @@ export class ThreadListView implements View {
     box.add(this.body);
     box.add(
       new TextRenderable(host.renderer, {
-        content: "↑/↓ move · enter open · n new · r refresh · q quit",
+        content: "↑/↓ move · enter open · n new · p skills · r refresh · q quit",
       }),
     );
     host.renderer.root.add(box);
@@ -72,6 +73,9 @@ export class ThreadListView implements View {
         break;
       case "n":
         void this.host.navigator.push(new SpawnWizardView(this.sdk, this.project));
+        break;
+      case "p":
+        void this.host.navigator.push(new SkillsView(this.sdk, this.project.id));
         break;
       case "r":
         void this.refresh();
