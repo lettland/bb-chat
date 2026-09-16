@@ -1,0 +1,38 @@
+import type { PermissionMode, SpawnParams } from "../tui/spawn-wizard.ts";
+import type { BBSdk } from "./sdk.ts";
+
+/** List available providers for the host. */
+export function listProviders(sdk: BBSdk): Promise<unknown[]> {
+  return sdk.providers.list({}) as Promise<unknown[]>;
+}
+
+/** List a provider's models (from the execution-options response). */
+export async function listModels(sdk: BBSdk, providerId: string): Promise<unknown[]> {
+  const response = await sdk.providers.models({ providerId });
+  const models = (response as { models?: unknown }).models;
+  return Array.isArray(models) ? models : [];
+}
+
+function permissionModeArg(mode: PermissionMode | null): { permissionMode?: PermissionMode } {
+  return mode ? { permissionMode: mode } : {};
+}
+
+/**
+ * Spawn a new thread from wizard params. Uses the project's default environment
+ * (`{ type: "project-default" }`); richer environment selection (new worktree,
+ * existing checkout, remote host) lands in a later pass. Returns the new thread
+ * id, or null if the response shape was unexpected.
+ */
+export async function spawnThread(sdk: BBSdk, params: SpawnParams): Promise<string | null> {
+  const response = await sdk.threads.spawn({
+    projectId: params.projectId,
+    ...(params.providerId ? { providerId: params.providerId } : {}),
+    ...(params.model ? { model: params.model } : {}),
+    ...permissionModeArg(params.permissionMode),
+    environment: { type: "project-default" },
+    prompt: params.prompt,
+  });
+  const rec = response as { threadId?: unknown; id?: unknown };
+  const id = typeof rec.threadId === "string" ? rec.threadId : rec.id;
+  return typeof id === "string" ? id : null;
+}

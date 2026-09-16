@@ -4,7 +4,7 @@ import { listThreads, type Unsubscribe, watchProject } from "../../bb/threads.ts
 import type { View, ViewHost } from "../navigator.ts";
 import { formatThreadRow, renderThreadList, type ThreadRow } from "../thread-list-render.ts";
 import { clamp, errorText } from "../util.ts";
-import { MessageView } from "./message-view.ts";
+import { SpawnWizardView } from "./spawn-wizard-view.ts";
 import { ThreadView } from "./thread-view.ts";
 
 /**
@@ -71,11 +71,7 @@ export class ThreadListView implements View {
         this.open();
         break;
       case "n":
-        void this.host.navigator.push(
-          new MessageView("new thread", [
-            "The spawn wizard (provider · model · mode · environment) lands next.",
-          ]),
-        );
+        void this.host.navigator.push(new SpawnWizardView(this.sdk, this.project));
         break;
       case "r":
         void this.refresh();

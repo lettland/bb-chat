@@ -27,7 +27,11 @@ Configuration (~/.config/vch/config.json, overridable by env):
   VCH_SERVER_URL / BB_SERVER_URL, VCH_START_COMMAND, VCH_BB_COMMAND, VCH_AUTO_START
 `;
 
-async function runChatCommand(global: boolean, threadId: string | null): Promise<number> {
+async function runChatCommand(
+  global: boolean,
+  threadId: string | null,
+  openWizard = false,
+): Promise<number> {
   const config = await resolveConfig();
   const server = await ensureServer(config);
   const sdk = createSdk(server.serverUrl);
@@ -47,7 +51,14 @@ async function runChatCommand(global: boolean, threadId: string | null): Promise
     return 0;
   }
 
-  await runChat({ sdk, serverUrl: server.serverUrl, project, global, initialThreadId: threadId });
+  await runChat({
+    sdk,
+    serverUrl: server.serverUrl,
+    project,
+    global,
+    initialThreadId: threadId,
+    openWizard,
+  });
   return 0;
 }
 
@@ -67,9 +78,7 @@ async function main(): Promise<number> {
     case "chat":
       return runChatCommand(command.global, command.threadId);
     case "new":
-      // The spawn wizard lands in a later phase; for now route to the project UI.
-      process.stdout.write("vch new: spawn wizard coming soon. Opening project view.\n");
-      return runChatCommand(false, null);
+      return runChatCommand(false, null, true);
   }
 }
 

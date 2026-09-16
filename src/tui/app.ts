@@ -1,6 +1,7 @@
 import type { BBSdk } from "../bb/sdk.ts";
 import { Navigator } from "./navigator.ts";
 import { MessageView } from "./views/message-view.ts";
+import { SpawnWizardView } from "./views/spawn-wizard-view.ts";
 import { ThreadListView } from "./views/thread-list-view.ts";
 import { ThreadView } from "./views/thread-view.ts";
 
@@ -13,6 +14,8 @@ export interface ChatContext {
   global: boolean;
   /** When set, open this thread directly instead of a list. */
   initialThreadId: string | null;
+  /** Open the spawn wizard on top of the project's thread list. */
+  openWizard: boolean;
 }
 
 /**
@@ -51,6 +54,7 @@ export async function runChat(ctx: ChatContext): Promise<void> {
     );
   } else if (ctx.project) {
     await navigator.push(new ThreadListView(ctx.sdk, ctx.project));
+    if (ctx.openWizard) await navigator.push(new SpawnWizardView(ctx.sdk, ctx.project));
   } else {
     await navigator.push(new MessageView("vch", ["No project in focus."]));
   }
