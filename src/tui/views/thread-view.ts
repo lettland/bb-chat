@@ -1,24 +1,29 @@
-import { BoxRenderable, fg, type KeyEvent, StyledText, TextRenderable } from "@opentui/core";
+import {
+  BoxRenderable,
+  fg,
+  type KeyEvent,
+  ScrollBoxRenderable,
+  StyledText,
+  TextRenderable,
+} from "@opentui/core";
 import type { BBSdk } from "../../bb/sdk.ts";
 import { getTimelineRows, sendText, type Unsubscribe, watchThread } from "../../bb/threads.ts";
 import { InputBuffer } from "../input-buffer.ts";
 import type { View, ViewHost } from "../navigator.ts";
-import { type DisplayLine, renderTimelineRows, toneColor } from "../timeline-render.ts";
-import { errorText, parseSlashCommand, scrollWindow, wrapText } from "../util.ts";
+import { renderTimelineRows, toneColor } from "../timeline-render.ts";
+import { errorText, parseSlashCommand } from "../util.ts";
 import { DiffView } from "./diff-view.ts";
 import { TerminalsView } from "./terminals-view.ts";
 
 const HEADER_FG = "#6A737D";
 const COMPOSER_BORDER = "#4EC9B0";
-const ROWS_OVERHEAD = 8; // header + status + bordered composer + margins
-const COLS_OVERHEAD = 4; // transcript padding + margins
 
 /**
- * A single thread: a colored, per-role transcript above a bordered composer.
- * User / assistant / tool activity are distinguished by color (see toneColor),
- * with blank lines between turns. The transcript scrolls (PgUp/PgDn, ↑/↓, Home/
- * End) through the full history and follows the latest when at the bottom; the
- * composer is always pinned and framed so the input is obvious.
+ * A single thread: a colored, per-role transcript in a scrollable region above a
+ * bordered composer. The transcript is a real ScrollBox — it holds the FULL
+ * thread, follows the latest (sticky bottom), and scrolls by mouse wheel, the
+ * scrollbar, and PgUp/PgDn/↑/↓/Home/End. User / assistant / tool activity are
+ * distinguished by color (toneColor), with blank lines between turns.
  */
 export class ThreadView implements View {
   /** Composer inputs intercepted as commands; everything else (incl. "/paths") sends. */
@@ -35,18 +40,13 @@ export class ThreadView implements View {
   readonly title = "thread";
   private host!: ViewHost;
   private box: BoxRenderable | null = null;
-  private transcript: TextRenderable | null = null;
+  private scrollbox: ScrollBoxRenderable | null = null;
+  private body: TextRenderable | null = null;
   private status: TextRenderable | null = null;
   private composer: TextRenderable | null = null;
   private readonly input = new InputBuffer();
   private unsub: Unsubscribe | null = null;
   private sending = false;
-  /** All rendered timeline lines (pre-wrap); the source for windowed scrolling. */
-  private lines: DisplayLine[] = [];
-  /** Lines scrolled up from the bottom (0 = following the latest). */
-  private scrollOffset = 0;
-  private viewHeight = 20;
-  /** In-flight guard: one full pagination at a time; bursts coalesce into one re-run. */
   private refreshing = false;
   private refreshQueued = false;
 
@@ -67,13 +67,15 @@ export class ThreadView implements View {
       }),
     );
 
-    this.transcript = new TextRenderable(host.renderer, {
-      content: "",
+    this.scrollbox = new ScrollBoxRenderable(host.renderer, {
       flexGrow: 1,
-      paddingLeft: 1,
-      paddingRight: 1,
+      stickyScroll: true,
+      stickyStart: "bottom",
+      contentOptions: { flexDirection: "column", paddingLeft: 1, paddingRight: 1 },
     });
-    outer.add(this.transcript);
+    this.body = new TextRenderable(host.renderer, { content: "" });
+    this.scrollbox.add(this.body);
+    outer.add(this.scrollbox);
 
     this.status = new TextRenderable(host.renderer, { content: "", fg: "#E5C07B" });
     outer.add(this.status);
@@ -124,30 +126,8 @@ export class ThreadView implements View {
       void this.host.navigator.push(new TerminalsView(this.sdk, this.threadId));
       return;
     }
-    switch (key.name) {
-      case "pageup":
-        this.scroll(this.viewHeight - 1);
-        return;
-      case "pagedown":
-        this.scroll(-(this.viewHeight - 1));
-        return;
-      case "up":
-        this.scroll(1);
-        return;
-      case "down":
-        this.scroll(-1);
-        return;
-      case "home":
-        this.scrollOffset = Number.MAX_SAFE_INTEGER;
-        this.render();
-        return;
-      case "end":
-        this.scrollOffset = 0;
-        this.render();
-        return;
-      default:
-        break;
-    }
+    if (this.handleScrollKey(key)) return;
+
     const action = this.input.handle(key);
     if (action.type === "submit") {
       void this.submit(action.value);
@@ -157,8 +137,32 @@ export class ThreadView implements View {
     }
   }
 
-  private renderComposer(): void {
-    if (this.composer) this.composer.content = `❯ ${this.input.value}`;
+  /** Route navigation keys to the ScrollBox; returns true if the key scrolled. */
+  private handleScrollKey(key: KeyEvent): boolean {
+    const scroll = this.scrollbox;
+    if (!scroll) return false;
+    switch (key.name) {
+      case "pageup":
+        scroll.scrollBy(-1, "viewport");
+        return true;
+      case "pagedown":
+        scroll.scrollBy(1, "viewport");
+        return true;
+      case "up":
+        scroll.scrollBy(-1);
+        return true;
+      case "down":
+        scroll.scrollBy(1);
+        return true;
+      case "home":
+        scroll.scrollTo(0);
+        return true;
+      case "end":
+        scroll.scrollTo(scroll.scrollHeight);
+        return true;
+      default:
+        return false;
+    }
   }
 
   private runCommand(name: string): void {
@@ -181,10 +185,14 @@ export class ThreadView implements View {
       default: // "help" and anything else routed here
         if (this.status) {
           this.status.content =
-            "commands: /exit /back /diff /terminals · keys: esc back · ctrl+c quit · PgUp/PgDn/Home/End scroll";
+            "commands: /exit /back /diff /terminals · keys: esc back · ctrl+c quit · PgUp/PgDn/Home/End or mouse wheel to scroll";
         }
         return;
     }
+  }
+
+  private renderComposer(): void {
+    if (this.composer) this.composer.content = `❯ ${this.input.value}`;
   }
 
   private async submit(text: string): Promise<void> {
@@ -198,7 +206,6 @@ export class ThreadView implements View {
     const trimmed = text.trim();
     if (trimmed.length === 0 || this.sending) return;
     this.sending = true;
-    this.scrollOffset = 0; // jump to latest so the sent message + reply are visible
     if (this.status) this.status.content = "sending…";
     try {
       await sendText(this.sdk, this.threadId, trimmed);
@@ -212,13 +219,12 @@ export class ThreadView implements View {
   }
 
   /**
-   * Reload the full timeline. Only one pagination runs at a time; realtime events
+   * Reload the full timeline. One pagination runs at a time; realtime events
    * arriving mid-fetch set a single "queued" flag and trigger exactly one re-run
-   * afterward — so fetches never overlap (no stale-fetch overwrite) and event
-   * bursts don't amplify into many paginations.
+   * afterward, so fetches never overlap and bursts don't amplify.
    */
   private async refresh(): Promise<void> {
-    if (!this.transcript) return;
+    if (!this.body) return;
     if (this.refreshing) {
       this.refreshQueued = true;
       return;
@@ -226,50 +232,21 @@ export class ThreadView implements View {
     this.refreshing = true;
     try {
       const lines = renderTimelineRows(await getTimelineRows(this.sdk, this.threadId));
-      this.lines = lines.length > 0 ? lines : [{ text: "(no messages yet)", tone: "meta" }];
+      this.body.content = new StyledText(
+        (lines.length > 0 ? lines : [{ text: "(no messages yet)", tone: "meta" as const }]).map(
+          (line) => fg(toneColor(line.tone))(`${line.text.length > 0 ? line.text : " "}\n`),
+        ),
+      );
     } catch (error) {
-      this.lines = [{ text: `error loading timeline: ${errorText(error)}`, tone: "attention" }];
+      this.body.content = new StyledText([
+        fg(toneColor("attention"))(`error loading timeline: ${errorText(error)}\n`),
+      ]);
     } finally {
       this.refreshing = false;
     }
-    this.render();
     if (this.refreshQueued && this.box) {
       this.refreshQueued = false;
       void this.refresh();
-    }
-  }
-
-  private scroll(delta: number): void {
-    this.scrollOffset = Math.max(0, this.scrollOffset + delta);
-    this.render();
-  }
-
-  /**
-   * Render the transcript into the viewport: word-wrap every line to the terminal
-   * width up front (so the renderer never re-wraps and overlaps rows), then window
-   * by scrollOffset (0 = latest) for scrollback, colored per role. A status line
-   * shows how much history is hidden above.
-   */
-  private render(): void {
-    const target = this.transcript;
-    if (!target) return;
-    const cols = Math.max(20, (process.stdout.columns ?? 100) - COLS_OVERHEAD);
-    this.viewHeight = Math.max(5, (process.stdout.rows ?? 40) - ROWS_OVERHEAD);
-
-    const wrapped: DisplayLine[] = [];
-    for (const line of this.lines) {
-      for (const piece of wrapText(line.text, cols)) wrapped.push({ text: piece, tone: line.tone });
-    }
-    const win = scrollWindow(wrapped, this.viewHeight, this.scrollOffset);
-    this.scrollOffset = win.offset;
-    target.content = new StyledText(
-      win.shown.map((line) =>
-        fg(toneColor(line.tone))(`${line.text.length > 0 ? line.text : " "}\n`),
-      ),
-    );
-    if (this.status) {
-      this.status.content =
-        win.above > 0 ? `↑ ${win.above} more · PgUp/PgDn ↑/↓ scroll · End latest` : "";
     }
   }
 }

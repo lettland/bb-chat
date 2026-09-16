@@ -28,8 +28,9 @@ export interface ChatContext {
 export async function runChat(ctx: ChatContext): Promise<void> {
   const { createCliRenderer } = await import("@opentui/core");
   // exitOnCtrlC is off: OpenTUI's built-in handler calls destroy(), which hangs
-  // here — we handle Ctrl-C ourselves via shutdown() below.
-  const renderer = await createCliRenderer({ exitOnCtrlC: false });
+  // here — we handle Ctrl-C ourselves via shutdown() below. useMouse enables
+  // mouse-wheel scrolling in the transcript's ScrollBox.
+  const renderer = await createCliRenderer({ exitOnCtrlC: false, useMouse: true });
 
   // Single, reliable termination path. Destroying the renderer restores the
   // terminal; process.exit then forces a clean quit — the realtime WebSocket and
