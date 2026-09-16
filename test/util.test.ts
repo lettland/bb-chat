@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { clamp, wrapText } from "../src/tui/util.ts";
+import { clamp, scrollWindow, wrapText } from "../src/tui/util.ts";
 
 describe("clamp", () => {
   test("bounds to range", () => {
@@ -32,5 +32,37 @@ describe("wrapText", () => {
     );
     for (const row of rows) expect(row.length).toBeLessThanOrEqual(width);
     expect(rows.join(" ")).toContain("quick");
+  });
+});
+
+describe("scrollWindow", () => {
+  const items = ["a", "b", "c", "d", "e"]; // 5 items
+
+  test("offset 0 pins to the bottom (latest)", () => {
+    const w = scrollWindow(items, 3, 0);
+    expect(w.shown).toEqual(["c", "d", "e"]);
+    expect(w).toMatchObject({ atBottom: true, above: 2, below: 0, offset: 0 });
+  });
+
+  test("scrolling up reveals older, tracks hidden counts", () => {
+    const w = scrollWindow(items, 3, 2);
+    expect(w.shown).toEqual(["a", "b", "c"]);
+    expect(w).toMatchObject({ atBottom: false, above: 0, below: 2, offset: 2 });
+  });
+
+  test("offset clamps to the top", () => {
+    const w = scrollWindow(items, 3, 999);
+    expect(w.shown).toEqual(["a", "b", "c"]);
+    expect(w.offset).toBe(2); // maxOffset = 5 - 3
+  });
+
+  test("everything fits: single full window", () => {
+    const w = scrollWindow(items, 10, 0);
+    expect(w.shown).toEqual(items);
+    expect(w).toMatchObject({ above: 0, below: 0, atBottom: true });
+  });
+
+  test("negative offset is treated as bottom", () => {
+    expect(scrollWindow(items, 3, -5).shown).toEqual(["c", "d", "e"]);
   });
 });

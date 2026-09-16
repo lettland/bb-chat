@@ -8,6 +8,42 @@ export function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
 }
 
+export interface ScrollWindow<T> {
+  /** The items visible in the viewport. */
+  shown: T[];
+  /** True when the window sits at the bottom (following the latest). */
+  atBottom: boolean;
+  /** How many items are hidden above / below the viewport. */
+  above: number;
+  below: number;
+  /** The offset clamped to a valid range (lines scrolled up from the bottom). */
+  offset: number;
+}
+
+/**
+ * Pick a `height`-tall window over `items`, `offset` lines up from the bottom
+ * (0 = pinned to the latest). Clamps the offset to a valid range and reports how
+ * much is hidden above/below so the caller can show a scroll indicator.
+ */
+export function scrollWindow<T>(
+  items: readonly T[],
+  height: number,
+  offset: number,
+): ScrollWindow<T> {
+  const h = Math.max(1, height);
+  const maxOffset = Math.max(0, items.length - h);
+  const off = Math.max(0, Math.min(Math.trunc(offset), maxOffset));
+  const end = items.length - off;
+  const start = Math.max(0, end - h);
+  return {
+    shown: items.slice(start, end),
+    atBottom: off === 0,
+    above: start,
+    below: items.length - end,
+    offset: off,
+  };
+}
+
 /**
  * Word-wrap a single logical line to `width` columns, hard-splitting words longer
  * than the width. Returns at least one row (possibly empty). Wrapping is done up
