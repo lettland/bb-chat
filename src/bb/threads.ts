@@ -36,6 +36,17 @@ export function sendText(sdk: BBSdk, threadId: string, text: string): Promise<un
   });
 }
 
+/** Fetch a thread's environment id (for opening its diff), or null if it has none. */
+export async function getThreadEnvironmentId(
+  sdk: BBSdk,
+  threadId: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const thread = await sdk.threads.get({ threadId, signal });
+  const environmentId = (thread as { environmentId?: unknown }).environmentId;
+  return typeof environmentId === "string" ? environmentId : null;
+}
+
 /** Watch a single thread for changes; `onChange` fires on each update. */
 export function watchThread(sdk: BBSdk, threadId: string, onChange: () => void): Unsubscribe {
   return sdk.subscribe({ event: "thread:changed", threadId, callback: () => onChange() });

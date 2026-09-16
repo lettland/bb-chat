@@ -5,6 +5,7 @@ import { InputBuffer } from "../input-buffer.ts";
 import type { View, ViewHost } from "../navigator.ts";
 import { renderTimelineText } from "../timeline-render.ts";
 import { errorText } from "../util.ts";
+import { DiffView } from "./diff-view.ts";
 
 /** Most recent transcript lines to keep rendered (until a scroll view lands). */
 const TRANSCRIPT_TAIL = 500;
@@ -67,6 +68,10 @@ export class ThreadView implements View {
       void this.host.navigator.pop();
       return;
     }
+    if (key.ctrl && key.name === "o") {
+      void this.host.navigator.push(new DiffView(this.sdk, this.threadId));
+      return;
+    }
     const action = this.input.handle(key);
     if (action.type === "submit") {
       void this.submit(action.value);
@@ -77,7 +82,7 @@ export class ThreadView implements View {
   }
 
   private headerText(): string {
-    return `${this.threadTitle}  ·  ${this.threadId}`;
+    return `${this.threadTitle}  ·  ${this.threadId}  ·  ctrl+o diff · esc back`;
   }
 
   private composerText(): string {
