@@ -4,7 +4,7 @@ import { getTimelineRows, sendText, type Unsubscribe, watchThread } from "../../
 import { InputBuffer } from "../input-buffer.ts";
 import type { View, ViewHost } from "../navigator.ts";
 import { type DisplayLine, renderTimelineRows, toneColor } from "../timeline-render.ts";
-import { errorText, scrollWindow, wrapText } from "../util.ts";
+import { errorText, parseSlashCommand, scrollWindow, wrapText } from "../util.ts";
 import { DiffView } from "./diff-view.ts";
 import { TerminalsView } from "./terminals-view.ts";
 
@@ -51,7 +51,7 @@ export class ThreadView implements View {
 
     outer.add(
       new TextRenderable(host.renderer, {
-        content: ` ${this.threadTitle}   ctrl+o diff · ctrl+t terminals · esc back`,
+        content: ` ${this.threadTitle}   /help · esc back · ctrl+c quit`,
         fg: HEADER_FG,
       }),
     );
@@ -71,7 +71,7 @@ export class ThreadView implements View {
       border: true,
       borderStyle: "rounded",
       borderColor: COMPOSER_BORDER,
-      title: "message",
+      title: "message · /help",
       titleAlignment: "left",
       height: 3,
       flexShrink: 0,
@@ -150,7 +150,43 @@ export class ThreadView implements View {
     if (this.composer) this.composer.content = `❯ ${this.input.value}`;
   }
 
+  private runCommand(name: string): void {
+    switch (name) {
+      case "":
+        return; // bare slash: ignore
+      case "exit":
+      case "quit":
+      case "q":
+        this.host.exit();
+        return;
+      case "back":
+        void this.host.navigator.pop();
+        return;
+      case "diff":
+        void this.host.navigator.push(new DiffView(this.sdk, this.threadId));
+        return;
+      case "terminals":
+      case "term":
+        void this.host.navigator.push(new TerminalsView(this.sdk, this.threadId));
+        return;
+      case "help":
+        if (this.status) {
+          this.status.content =
+            "commands: /exit /back /diff /terminals · keys: esc back · ctrl+c quit · PgUp/PgDn/Home/End scroll";
+        }
+        return;
+      default:
+        if (this.status) this.status.content = `unknown command: /${name} (try /help)`;
+        return;
+    }
+  }
+
   private async submit(text: string): Promise<void> {
+    const command = parseSlashCommand(text);
+    if (command) {
+      this.runCommand(command.name);
+      return;
+    }
     const trimmed = text.trim();
     if (trimmed.length === 0 || this.sending) return;
     this.sending = true;

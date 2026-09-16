@@ -1,5 +1,25 @@
 import { describe, expect, test } from "bun:test";
-import { clamp, scrollWindow, wrapText } from "../src/tui/util.ts";
+import { clamp, parseSlashCommand, scrollWindow, wrapText } from "../src/tui/util.ts";
+
+describe("parseSlashCommand", () => {
+  test("non-slash input is a message (null)", () => {
+    expect(parseSlashCommand("hello")).toBeNull();
+    expect(parseSlashCommand("  hi /not-a-command")).toBeNull();
+  });
+
+  test("parses name and lowercases it", () => {
+    expect(parseSlashCommand("/exit")).toEqual({ name: "exit", args: "" });
+    expect(parseSlashCommand("  /QUIT  ")).toEqual({ name: "quit", args: "" });
+  });
+
+  test("splits name from args", () => {
+    expect(parseSlashCommand("/model gpt-6 astra")).toEqual({ name: "model", args: "gpt-6 astra" });
+  });
+
+  test("bare slash yields empty name", () => {
+    expect(parseSlashCommand("/")).toEqual({ name: "", args: "" });
+  });
+});
 
 describe("clamp", () => {
   test("bounds to range", () => {

@@ -59,7 +59,10 @@ async function runChatCommand(
     initialThreadId: threadId,
     openWizard,
   });
-  return 0;
+  // The TUI is done (quit via /exit, Ctrl-C, or backing out). Realtime WebSocket
+  // subscriptions and the OpenTUI runtime keep the event loop alive after the
+  // renderer is destroyed, so force a clean exit rather than hang.
+  process.exit(0);
 }
 
 async function main(): Promise<number> {

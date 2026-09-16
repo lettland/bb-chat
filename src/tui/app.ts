@@ -27,23 +27,42 @@ export interface ChatContext {
  */
 export async function runChat(ctx: ChatContext): Promise<void> {
   const { createCliRenderer } = await import("@opentui/core");
-  const renderer = await createCliRenderer({ exitOnCtrlC: true });
+  // exitOnCtrlC is off: OpenTUI's built-in handler calls destroy(), which hangs
+  // here — we handle Ctrl-C ourselves via shutdown() below.
+  const renderer = await createCliRenderer({ exitOnCtrlC: false });
 
-  let resolveDone: () => void = () => {};
-  const finished = new Promise<void>((resolve) => {
-    resolveDone = resolve;
-  });
-  let exited = false;
-  const exit = (): void => {
-    if (exited) return;
-    exited = true;
-    renderer.destroy();
-    resolveDone();
+  // Single, reliable termination path. Destroying the renderer restores the
+  // terminal; process.exit then forces a clean quit — the realtime WebSocket and
+  // OpenTUI runtime otherwise keep the event loop alive after destroy(), so
+  // resolving a promise would not actually end the process.
+  // Terminal restore sequences: leave alt-screen, show cursor, disable mouse +
+  // bracketed paste, reset colors. Built from char codes so no literal control
+  // chars sit in source. renderer.destroy()/suspend() can hang in some runtimes,
+  // so we restore manually and force-exit instead of relying on them.
+  const ESC = String.fromCharCode(0x1b);
+  const RESTORE = `${ESC}[?1049l${ESC}[?25h${ESC}[?1000l${ESC}[?1002l${ESC}[?1003l${ESC}[?1006l${ESC}[?2004l${ESC}[0m`;
+  let exiting = false;
+  const shutdown = (): void => {
+    if (exiting) return;
+    exiting = true;
+    try {
+      process.stdin.setRawMode?.(false);
+    } catch {}
+    try {
+      process.stdout.write(RESTORE);
+    } catch {}
+    process.exit(0);
   };
 
-  const navigator = new Navigator({ renderer, exit });
-  renderer.keyInput.on("keypress", (key) => navigator.handleKey(key));
-  renderer.once("destroy", () => resolveDone());
+  const navigator = new Navigator({ renderer, exit: shutdown });
+  renderer.keyInput.on("keypress", (key) => {
+    if (key.ctrl && key.name === "c") {
+      shutdown();
+      return;
+    }
+    navigator.handleKey(key);
+  });
+  renderer.once("destroy", () => process.exit(0)); // fallback if destroyed elsewhere
 
   if (ctx.initialThreadId) {
     await navigator.push(new ThreadView(ctx.sdk, ctx.initialThreadId, ctx.initialThreadId));
@@ -56,5 +75,6 @@ export async function runChat(ctx: ChatContext): Promise<void> {
     await navigator.push(new MessageView("vch", ["No project in focus."]));
   }
 
-  await finished;
+  // Stay alive until a shutdown path calls process.exit (quit / Ctrl-C / last pop).
+  await new Promise<void>(() => {});
 }
