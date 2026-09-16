@@ -48,7 +48,13 @@ describe("parseArgs", () => {
       model: "gpt",
       mode: "auto",
       prompt: "do it",
+      force: false,
     });
+  });
+
+  test("new --force sets the flag", () => {
+    const cmd = parseArgs(["new", "--force", "do a thing"]);
+    expect(cmd).toMatchObject({ kind: "new", force: true, prompt: "do a thing" });
   });
 
   test("new flag missing value throws", () => {

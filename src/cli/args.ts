@@ -7,6 +7,7 @@ export type Command =
       model: string | null;
       mode: string | null;
       prompt: string | null;
+      force: boolean;
     }
   | { kind: "init"; yes: boolean; force: boolean; print: boolean }
   | { kind: "providers" }
@@ -65,6 +66,7 @@ function parseNew(rest: string[]): Command {
   let model: string | null = null;
   let mode: string | null = null;
   let prompt: string | null = null;
+  let force = false;
 
   for (let i = 0; i < rest.length; i++) {
     const token = rest[i];
@@ -82,11 +84,15 @@ function parseNew(rest: string[]): Command {
         mode = takeValue(rest, i, token);
         i++;
         break;
+      case "--force":
+      case "-f":
+        force = true;
+        break;
       default:
         if (!token.startsWith("-") && prompt === null) prompt = token;
         break;
     }
   }
 
-  return { kind: "new", provider, model, mode, prompt };
+  return { kind: "new", provider, model, mode, prompt, force };
 }

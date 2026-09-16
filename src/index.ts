@@ -6,6 +6,7 @@ import { createSdk } from "./bb/sdk.ts";
 import { parseArgs } from "./cli/args.ts";
 import { runDoctor } from "./cli/doctor.ts";
 import { runInit } from "./cli/init.ts";
+import { assessPrompt } from "./cli/prompt-guard.ts";
 import { runProviders } from "./cli/providers.ts";
 import { runThreads } from "./cli/threads.ts";
 import { resolveConfig } from "./config.ts";
@@ -24,7 +25,8 @@ Usage:
   vch <thread-id>         Open a specific thread (thr_...)
   vch threads             List this project's threads and their ids
   vch new ["prompt"]      Start a thread (interactive picker if no prompt)
-      [--provider <id>] [--model <id>] [--mode <mode>]
+      [--provider <id>] [--model <id>] [--mode <mode>] [--force]
+      (a trivial prompt like "hi" asks to confirm; --force skips the check)
   vch providers           List providers, models, and modes (values for vch new)
   vch init [--yes] [--force] [--print]   Detect system-local BB, write editable config
   vch doctor              Diagnose config + BB reachability
@@ -81,15 +83,37 @@ async function runNew(
   provider: string | null,
   model: string | null,
   mode: string | null,
-  prompt: string | null,
+  promptText: string | null,
+  force: boolean,
 ): Promise<number> {
-  if (!prompt) return runChatCommand(false, null, true);
+  if (!promptText) return runChatCommand(false, null, true);
 
   if (mode !== null && !(PERMISSION_MODES as readonly string[]).includes(mode)) {
     throw new VchError(
       `invalid --mode "${mode}"`,
       `expected one of: ${PERMISSION_MODES.join(", ")}`,
     );
+  }
+
+  // Avoid spending provider tokens on obviously trivial prompts unless forced.
+  if (!force) {
+    const assessment = assessPrompt(promptText);
+    if (assessment.lowValue) {
+      if (process.stdin.isTTY && process.stdout.isTTY) {
+        const answer = globalThis.prompt(
+          `This prompt ${assessment.reason} and will spend provider tokens. Start a thread anyway? [y/N]`,
+        );
+        if (!/^y(es)?$/i.test((answer ?? "").trim())) {
+          process.stdout.write("Aborted — no thread created.\n");
+          return 0;
+        }
+      } else {
+        throw new VchError(
+          `Refusing to spawn: the prompt ${assessment.reason}.`,
+          "Give a more specific task, or pass --force to spawn anyway.",
+        );
+      }
+    }
   }
 
   const config = await resolveConfig();
@@ -104,7 +128,7 @@ async function runNew(
       providerId: provider,
       model,
       permissionMode: mode as PermissionMode | null,
-      prompt,
+      prompt: promptText,
     });
   } catch (error) {
     throw new VchError(
@@ -149,7 +173,7 @@ async function main(): Promise<number> {
     case "chat":
       return runChatCommand(command.global, command.threadId);
     case "new":
-      return runNew(command.provider, command.model, command.mode, command.prompt);
+      return runNew(command.provider, command.model, command.mode, command.prompt, command.force);
   }
 }
 
