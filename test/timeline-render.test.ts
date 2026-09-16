@@ -2,13 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { renderTimelineRows, renderTimelineText } from "../src/tui/timeline-render.ts";
 
 describe("renderTimelineRows", () => {
-  test("conversation rows carry role tone and label", () => {
+  test("conversation rows carry role tone and label, separated by a blank line", () => {
     const lines = renderTimelineRows([
       { kind: "conversation", role: "user", text: "hello" },
       { kind: "conversation", role: "assistant", text: "hi there" },
     ]);
-    expect(lines[0]).toEqual({ text: "you: hello", tone: "user" });
-    expect(lines[1]).toEqual({ text: "assistant: hi there", tone: "assistant" });
+    expect(lines.map((l) => l.text)).toEqual(["you: hello", "", "assistant: hi there"]);
+    expect(lines[0]?.tone).toBe("user");
+    expect(lines[2]?.tone).toBe("assistant");
   });
 
   test("multiline conversation text indents continuation lines under the text", () => {

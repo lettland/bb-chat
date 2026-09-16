@@ -93,6 +93,8 @@ function renderRow(row: unknown, out: DisplayLine[]): void {
   switch (str(rec, "kind")) {
     case "conversation": {
       const isAssistant = rec.role === "assistant";
+      // Blank line between turns so the transcript reads as distinct messages.
+      if (out.length > 0) out.push({ text: "", tone: "meta" });
       pushText(
         out,
         isAssistant ? "assistant:" : "you:",
@@ -138,4 +140,25 @@ export function renderTimelineText(rows: readonly unknown[]): string {
   return renderTimelineRows(rows)
     .map((line) => line.text)
     .join("\n");
+}
+
+/**
+ * Terminal color (hex) per line tone, so the reader can tell apart their own
+ * messages (user), the assistant, tool/command activity, and system notes.
+ */
+export function toneColor(tone: LineTone): string {
+  switch (tone) {
+    case "user":
+      return "#4EC9B0"; // teal — you (the human)
+    case "assistant":
+      return "#E6E6E6"; // near-white — the assistant
+    case "work":
+      return "#7A8290"; // gray — tools / commands
+    case "attention":
+      return "#E5C07B"; // amber — approvals / questions
+    case "system":
+      return "#6A737D"; // dim — system notes
+    case "meta":
+      return "#4B5263"; // dimmest — separators / meta
+  }
 }
