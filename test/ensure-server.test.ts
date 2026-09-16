@@ -1,0 +1,107 @@
+import { describe, expect, test } from "bun:test";
+import { ensureServer } from "../src/bb/ensure-server.ts";
+import { isVchError } from "../src/errors.ts";
+import type { VchConfig } from "../src/types.ts";
+
+const baseConfig = (overrides: Partial<VchConfig> = {}): VchConfig => ({
+  serverUrl: "http://bb",
+  bbCommand: null,
+  startCommand: null,
+  autoStart: false,
+  ...overrides,
+});
+
+const noopDeps = {
+  launch: () => {},
+  delay: async () => {},
+  now: () => 0,
+};
+
+describe("ensureServer", () => {
+  test("returns immediately when already healthy", async () => {
+    const result = await ensureServer(
+      baseConfig(),
+      {},
+      {
+        ...noopDeps,
+        probe: async () => ({ ok: true, launchId: "L" }),
+      },
+    );
+    expect(result).toEqual({ serverUrl: "http://bb", launchId: "L", started: false });
+  });
+
+  test("errors when down and autoStart is disabled", async () => {
+    try {
+      await ensureServer(
+        baseConfig(),
+        {},
+        { ...noopDeps, probe: async () => ({ ok: false, launchId: null }) },
+      );
+      throw new Error("expected throw");
+    } catch (error) {
+      expect(isVchError(error)).toBe(true);
+      expect((error as Error).message).toContain("not reachable");
+    }
+  });
+
+  test("errors when autoStart is on but no startCommand", async () => {
+    try {
+      await ensureServer(
+        baseConfig({ autoStart: true }),
+        {},
+        {
+          ...noopDeps,
+          probe: async () => ({ ok: false, launchId: null }),
+        },
+      );
+      throw new Error("expected throw");
+    } catch (error) {
+      expect(isVchError(error)).toBe(true);
+      expect((error as Error).message).toContain("no startCommand");
+    }
+  });
+
+  test("launches then succeeds once healthy", async () => {
+    let launched = false;
+    let calls = 0;
+    const result = await ensureServer(
+      baseConfig({ autoStart: true, startCommand: ["bb", "start"] }),
+      { pollIntervalMs: 1, readyTimeoutMs: 1000 },
+      {
+        ...noopDeps,
+        now: () => calls * 10,
+        launch: () => {
+          launched = true;
+        },
+        probe: async () => {
+          calls++;
+          return { ok: calls >= 3, launchId: calls >= 3 ? "L2" : null };
+        },
+      },
+    );
+    expect(launched).toBe(true);
+    expect(result).toEqual({ serverUrl: "http://bb", launchId: "L2", started: true });
+  });
+
+  test("times out if never healthy", async () => {
+    let clock = 0;
+    try {
+      await ensureServer(
+        baseConfig({ autoStart: true, startCommand: ["bb", "start"] }),
+        { pollIntervalMs: 1, readyTimeoutMs: 5 },
+        {
+          ...noopDeps,
+          now: () => {
+            clock += 10;
+            return clock;
+          },
+          probe: async () => ({ ok: false, launchId: null }),
+        },
+      );
+      throw new Error("expected throw");
+    } catch (error) {
+      expect(isVchError(error)).toBe(true);
+      expect((error as Error).message).toContain("did not become healthy");
+    }
+  });
+});
