@@ -35,6 +35,9 @@ export class ThreadView implements View {
   /** Lines scrolled up from the bottom (0 = following the latest). */
   private scrollOffset = 0;
   private viewHeight = 20;
+  /** In-flight guard: one full pagination at a time; bursts coalesce into one re-run. */
+  private refreshing = false;
+  private refreshQueued = false;
 
   constructor(
     private readonly sdk: BBSdk,
@@ -164,15 +167,32 @@ export class ThreadView implements View {
     }
   }
 
+  /**
+   * Reload the full timeline. Only one pagination runs at a time; realtime events
+   * arriving mid-fetch set a single "queued" flag and trigger exactly one re-run
+   * afterward — so fetches never overlap (no stale-fetch overwrite) and event
+   * bursts don't amplify into many paginations.
+   */
   private async refresh(): Promise<void> {
     if (!this.transcript) return;
+    if (this.refreshing) {
+      this.refreshQueued = true;
+      return;
+    }
+    this.refreshing = true;
     try {
       const lines = renderTimelineRows(await getTimelineRows(this.sdk, this.threadId));
       this.lines = lines.length > 0 ? lines : [{ text: "(no messages yet)", tone: "meta" }];
     } catch (error) {
       this.lines = [{ text: `error loading timeline: ${errorText(error)}`, tone: "attention" }];
+    } finally {
+      this.refreshing = false;
     }
     this.render();
+    if (this.refreshQueued && this.box) {
+      this.refreshQueued = false;
+      void this.refresh();
+    }
   }
 
   private scroll(delta: number): void {
