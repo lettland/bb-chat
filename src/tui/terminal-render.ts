@@ -36,9 +36,21 @@ export function toTerminalRows(response: unknown): TerminalRow[] {
   return rows;
 }
 
-// Matches CSI/OSC/single-char ANSI escape sequences.
-// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escapes are control characters by definition.
-const ANSI_PATTERN = /(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^]*(?:|\\))/g;
+const ESC = String.fromCharCode(0x1b);
+const BEL = String.fromCharCode(0x07);
+
+// Built from char codes (not literal control chars in source, so Biome leaves it
+// alone and no ignore is needed). Alternations, in order:
+//   1. CSI:  ESC [ params intermediates final
+//   2. OSC:  ESC ] ... terminated by BEL or ST (ESC \)
+//   3. C1 two-char escapes: ESC + one final byte in @-Z \ ^ _
+//      (deliberately EXCLUDES [ and ], which start CSI/OSC — otherwise ESC]
+//      would match here and the OSC handler would never run, leaking the OSC
+//      payload into the output).
+const ANSI_PATTERN = new RegExp(
+  `${ESC}(?:\\[[0-?]*[ -/]*[@-~]|\\][^${BEL}]*(?:${BEL}|${ESC}\\\\)|[@-Z\\\\^_])`,
+  "g",
+);
 
 /** Strip ANSI escape sequences and carriage returns, leaving readable text. */
 export function stripAnsi(input: string): string {
