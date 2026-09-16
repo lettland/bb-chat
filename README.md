@@ -19,6 +19,10 @@ data layers checked against a live BB; broaden coverage as you use it.
 
 ## Install
 
+- **Build & install locally** — `bun run install:local` compiles a standalone
+  binary to `~/.local/bin/vch`. Override the target with `PREFIX=/usr/local/bin
+  bun run install:local`, or symlink the live source instead with
+  `VCH_INSTALL_MODE=link bun run install:local`.
 - **Binary** — download the `vch-<os>-<arch>` build for your platform from the
   [releases](https://github.com/valksor/vch/releases), `chmod +x`, put it on your `PATH`.
 - **npm** (requires Bun) — `bun install -g vch`, then `vch`.
