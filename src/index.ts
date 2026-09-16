@@ -27,26 +27,27 @@ Configuration (~/.config/vch/config.json, overridable by env):
   VCH_SERVER_URL / BB_SERVER_URL, VCH_START_COMMAND, VCH_BB_COMMAND, VCH_AUTO_START
 `;
 
-async function runChatCommand(global: boolean): Promise<number> {
+async function runChatCommand(global: boolean, threadId: string | null): Promise<number> {
   const config = await resolveConfig();
   const server = await ensureServer(config);
   const sdk = createSdk(server.serverUrl);
 
+  // Opening a specific thread needs no project; otherwise resolve (auto-create) cwd's project.
   let project: ChatContext["project"] = null;
-  if (!global) {
+  if (!global && !threadId) {
     const resolved = await resolveProject(sdk, process.cwd());
     project = { id: resolved.id, name: resolved.name };
   }
 
   if (!process.stdout.isTTY) {
-    const scope = global ? "global" : (project?.name ?? "project");
+    const scope = threadId ?? (global ? "global" : (project?.name ?? "project"));
     process.stdout.write(
       `Connected to BB at ${server.serverUrl} (${scope}). Run vch in a terminal to open the interactive UI.\n`,
     );
     return 0;
   }
 
-  await runChat({ sdk, serverUrl: server.serverUrl, project, global });
+  await runChat({ sdk, serverUrl: server.serverUrl, project, global, initialThreadId: threadId });
   return 0;
 }
 
@@ -64,11 +65,11 @@ async function main(): Promise<number> {
     case "doctor":
       return runDoctor();
     case "chat":
-      return runChatCommand(command.global);
+      return runChatCommand(command.global, command.threadId);
     case "new":
       // The spawn wizard lands in a later phase; for now route to the project UI.
       process.stdout.write("vch new: spawn wizard coming soon. Opening project view.\n");
-      return runChatCommand(false);
+      return runChatCommand(false, null);
   }
 }
 
