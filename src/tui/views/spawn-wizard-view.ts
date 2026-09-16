@@ -42,7 +42,9 @@ export class SpawnWizardView implements View {
 
   constructor(
     private readonly sdk: BBSdk,
-    private readonly project: { id: string; name: string },
+    // The project id is resolved lazily on submit so the wizard opening (and
+    // cancelling) never creates a project — only actually spawning a thread does.
+    private readonly resolveProjectId: () => Promise<{ id: string; name: string }>,
   ) {}
 
   async mount(host: ViewHost): Promise<void> {
@@ -150,7 +152,8 @@ export class SpawnWizardView implements View {
     this.busy = true;
     if (this.status) this.status.content = "creating thread…";
     try {
-      const params = buildSpawnParams(setPrompt(this.state, text), this.project.id);
+      const project = await this.resolveProjectId();
+      const params = buildSpawnParams(setPrompt(this.state, text), project.id);
       const threadId = await spawnThread(this.sdk, params);
       if (threadId) {
         await this.host.navigator.replace(new ThreadView(this.sdk, threadId, "new thread"));

@@ -31,7 +31,7 @@ data layers checked against a live BB; broaden coverage as you use it.
 ## Usage
 
 ```
-vch                      Open the current directory's project (creates it if new)
+vch                      Open the current directory's project (does not create one)
 vch -g, --global         Global home: all projects
 vch <thread-id>          Open a specific thread (thr_...)
 vch threads              List this project's threads and their ids

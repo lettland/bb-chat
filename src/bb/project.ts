@@ -54,40 +54,39 @@ export function pickLocalHost<H extends HostLike>(hosts: readonly H[]): H | null
   return hosts[0] ?? null;
 }
 
-export interface ResolveProjectOptions {
-  /** Auto-create the project when no match exists (the default "just works" behavior). */
-  create?: boolean;
-  signal?: AbortSignal;
-}
-
-export interface ResolvedProject {
+export interface ProjectMatch {
   id: string;
   name: string;
-  /** Whether this project was created during resolution. */
-  created: boolean;
 }
 
 /**
- * Resolve the BB project for a working directory: match an existing project by
- * local-path source, else create one rooted at `cwd` (like a coding agent that
- * "just works" in whatever directory you launch it from).
+ * Find the BB project registered for a working directory by its local-path
+ * source. Returns null when none exists — never creates one, so merely opening
+ * `vch` in a directory has no side effect.
  */
-export async function resolveProject(
+export async function findProject(
   sdk: BBSdk,
   cwd: string,
-  options: ResolveProjectOptions = {},
-): Promise<ResolvedProject> {
-  const { create = true, signal } = options;
+  signal?: AbortSignal,
+): Promise<ProjectMatch | null> {
   const projects = (await sdk.projects.list({ signal })) as ProjectLike[];
   const match = matchProjectByPath(projects, cwd);
-  if (match) return { id: match.id, name: match.name, created: false };
+  return match ? { id: match.id, name: match.name } : null;
+}
 
-  if (!create) {
-    throw new VchError(
-      `No BB project is registered for ${normalizePath(cwd)}.`,
-      "Run 'vch' here to create one, or open the directory in the BB app.",
-    );
-  }
+/**
+ * Resolve the BB project for a working directory, creating one rooted at `cwd`
+ * if none exists. Call this only when the user commits to working here (starting
+ * a thread) — not on a bare open — so projects aren't registered for directories
+ * you only glanced at.
+ */
+export async function ensureProject(
+  sdk: BBSdk,
+  cwd: string,
+  signal?: AbortSignal,
+): Promise<ProjectMatch> {
+  const existing = await findProject(sdk, cwd, signal);
+  if (existing) return existing;
 
   const hosts = (await sdk.hosts.list()) as HostLike[];
   const host = pickLocalHost(hosts);
@@ -102,5 +101,5 @@ export async function resolveProject(
     name: basename(normalizePath(cwd)) || "project",
     source: { type: "local_path", hostId: host.id, path: normalizePath(cwd) },
   });
-  return { id: created.id, name: created.name, created: true };
+  return { id: created.id, name: created.name };
 }

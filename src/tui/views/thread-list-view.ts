@@ -72,7 +72,8 @@ export class ThreadListView implements View {
         this.open();
         break;
       case "n":
-        void this.host.navigator.push(new SpawnWizardView(this.sdk, this.project));
+        // The project already exists here, so resolving its id is immediate.
+        void this.host.navigator.push(new SpawnWizardView(this.sdk, async () => this.project));
         break;
       case "p":
         void this.host.navigator.push(new SkillsView(this.sdk, this.project.id));

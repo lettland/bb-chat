@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { ensureServer } from "./bb/ensure-server.ts";
-import { resolveProject } from "./bb/project.ts";
+import { ensureProject, findProject } from "./bb/project.ts";
 import { spawnThread } from "./bb/providers.ts";
 import { createSdk } from "./bb/sdk.ts";
 import { parseArgs } from "./cli/args.ts";
@@ -20,7 +20,7 @@ import { VERSION } from "./version.ts";
 const HELP = `vch ${VERSION} — BB in your terminal
 
 Usage:
-  vch                     Open the current directory's project (creates it if new)
+  vch                     Open the current directory's project (does not create one)
   vch -g, --global        Global home: all projects
   vch <thread-id>         Open a specific thread (thr_...)
   vch threads             List this project's threads and their ids
@@ -36,20 +36,24 @@ Configuration (~/.config/vch/config.json, overridable by env):
   VCH_SERVER_URL / BB_SERVER_URL, VCH_START_COMMAND, VCH_BB_COMMAND, VCH_AUTO_START
 `;
 
-async function runChatCommand(
-  global: boolean,
-  threadId: string | null,
-  openWizard = false,
-): Promise<number> {
+async function runChatCommand(global: boolean, threadId: string | null): Promise<number> {
   const config = await resolveConfig();
   const server = await ensureServer(config);
   const sdk = createSdk(server.serverUrl);
 
-  // Opening a specific thread needs no project; otherwise resolve (auto-create) cwd's project.
+  // Opening a specific thread or the global home needs no project. Bare `vch`
+  // only OPENS the cwd's project — it does not create one (that happens when you
+  // start a thread), so merely opening in a new directory has no side effect.
   let project: ChatContext["project"] = null;
   if (!global && !threadId) {
-    const resolved = await resolveProject(sdk, process.cwd());
-    project = { id: resolved.id, name: resolved.name };
+    project = await findProject(sdk, process.cwd());
+    if (!project) {
+      process.stdout.write(
+        `No BB project for ${process.cwd()} yet (nothing was created).\n` +
+          `Start one here with:  vch new "your first task"\n`,
+      );
+      return 0;
+    }
   }
 
   if (!process.stdout.isTTY) {
@@ -66,7 +70,7 @@ async function runChatCommand(
     project,
     global,
     initialThreadId: threadId,
-    openWizard,
+    newThreadCwd: null,
   });
   // The TUI is done (quit via /exit, Ctrl-C, or backing out). Realtime WebSocket
   // subscriptions and the OpenTUI runtime keep the event loop alive after the
@@ -86,8 +90,6 @@ async function runNew(
   promptText: string | null,
   force: boolean,
 ): Promise<number> {
-  if (!promptText) return runChatCommand(false, null, true);
-
   if (mode !== null && !(PERMISSION_MODES as readonly string[]).includes(mode)) {
     throw new VchError(
       `invalid --mode "${mode}"`,
@@ -95,7 +97,32 @@ async function runNew(
     );
   }
 
-  // Avoid spending provider tokens on obviously trivial prompts unless forced.
+  const config = await resolveConfig();
+  const server = await ensureServer(config);
+  const sdk = createSdk(server.serverUrl);
+
+  // No prompt → interactive wizard. The project is created lazily on submit, so
+  // opening (and cancelling) the wizard registers nothing.
+  if (!promptText) {
+    if (!process.stdout.isTTY) {
+      process.stdout.write(
+        'Run `vch new` in a terminal for the picker, or pass a task: vch new "your task".\n',
+      );
+      return 0;
+    }
+    await runChat({
+      sdk,
+      serverUrl: server.serverUrl,
+      project: null,
+      global: false,
+      initialThreadId: null,
+      newThreadCwd: process.cwd(),
+    });
+    process.exit(0);
+  }
+
+  // Quick-spawn. Assess the prompt BEFORE creating a project or spawning, so a
+  // trivial prompt neither registers a project nor spends tokens.
   if (!force) {
     const assessment = assessPrompt(promptText);
     if (assessment.lowValue) {
@@ -116,15 +143,12 @@ async function runNew(
     }
   }
 
-  const config = await resolveConfig();
-  const server = await ensureServer(config);
-  const sdk = createSdk(server.serverUrl);
-  const resolved = await resolveProject(sdk, process.cwd());
+  const project = await ensureProject(sdk, process.cwd());
   // provider/model may be null: BB resolves its own defaults (see spawnThread).
   let threadId: string | null;
   try {
     threadId = await spawnThread(sdk, {
-      projectId: resolved.id,
+      projectId: project.id,
       providerId: provider,
       model,
       permissionMode: mode as PermissionMode | null,
@@ -145,10 +169,10 @@ async function runNew(
   await runChat({
     sdk,
     serverUrl: server.serverUrl,
-    project: { id: resolved.id, name: resolved.name },
+    project,
     global: false,
     initialThreadId: threadId,
-    openWizard: false,
+    newThreadCwd: null,
   });
   process.exit(0);
 }

@@ -1,3 +1,4 @@
+import { ensureProject } from "../bb/project.ts";
 import type { BBSdk } from "../bb/sdk.ts";
 import { Navigator } from "./navigator.ts";
 import { GlobalHomeView } from "./views/global-home-view.ts";
@@ -15,8 +16,12 @@ export interface ChatContext {
   global: boolean;
   /** When set, open this thread directly instead of a list. */
   initialThreadId: string | null;
-  /** Open the spawn wizard on top of the project's thread list. */
-  openWizard: boolean;
+  /**
+   * When set, open the spawn wizard directly for this working directory. The
+   * project is created lazily on submit (so `vch new` that opens and cancels the
+   * wizard doesn't register a project).
+   */
+  newThreadCwd: string | null;
 }
 
 /**
@@ -67,11 +72,13 @@ export async function runChat(ctx: ChatContext): Promise<void> {
 
   if (ctx.initialThreadId) {
     await navigator.push(new ThreadView(ctx.sdk, ctx.initialThreadId, ctx.initialThreadId));
+  } else if (ctx.newThreadCwd !== null) {
+    const cwd = ctx.newThreadCwd;
+    await navigator.push(new SpawnWizardView(ctx.sdk, () => ensureProject(ctx.sdk, cwd)));
   } else if (ctx.global) {
     await navigator.push(new GlobalHomeView(ctx.sdk));
   } else if (ctx.project) {
     await navigator.push(new ThreadListView(ctx.sdk, ctx.project));
-    if (ctx.openWizard) await navigator.push(new SpawnWizardView(ctx.sdk, ctx.project));
   } else {
     await navigator.push(new MessageView("vch", ["No project in focus."]));
   }
