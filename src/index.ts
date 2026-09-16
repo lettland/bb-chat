@@ -13,6 +13,7 @@ import { isVchError, VchError } from "./errors.ts";
 import type { ChatContext } from "./tui/app.ts";
 import { runChat } from "./tui/app.ts";
 import { PERMISSION_MODES, type PermissionMode } from "./tui/spawn-wizard.ts";
+import { errorText } from "./tui/util.ts";
 import { VERSION } from "./version.ts";
 
 const HELP = `vch ${VERSION} — BB in your terminal
@@ -95,13 +96,22 @@ async function runNew(
   const server = await ensureServer(config);
   const sdk = createSdk(server.serverUrl);
   const resolved = await resolveProject(sdk, process.cwd());
-  const threadId = await spawnThread(sdk, {
-    projectId: resolved.id,
-    providerId: provider,
-    model,
-    permissionMode: mode as PermissionMode | null,
-    prompt,
-  });
+  // provider/model may be null: BB resolves its own defaults (see spawnThread).
+  let threadId: string | null;
+  try {
+    threadId = await spawnThread(sdk, {
+      projectId: resolved.id,
+      providerId: provider,
+      model,
+      permissionMode: mode as PermissionMode | null,
+      prompt,
+    });
+  } catch (error) {
+    throw new VchError(
+      `could not start a thread: ${errorText(error)}`,
+      "check 'vch providers' for valid --provider / --model values",
+    );
+  }
   if (!threadId) throw new VchError("BB did not return a new thread id.");
 
   if (!process.stdout.isTTY) {

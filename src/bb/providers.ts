@@ -18,10 +18,14 @@ function permissionModeArg(mode: PermissionMode | null): { permissionMode?: Perm
 }
 
 /**
- * Spawn a new thread from wizard params. Uses the project's default environment
- * (`{ type: "project-default" }`); richer environment selection (new worktree,
- * existing checkout, remote host) lands in a later pass. Returns the new thread
- * id, or null if the response shape was unexpected.
+ * Spawn a new thread from wizard/CLI params. Uses the project's default
+ * environment (`{ type: "project-default" }`); richer environment selection lands
+ * later. Returns the new thread id, or null if the response shape was unexpected.
+ *
+ * providerId and model are omitted when null: BB resolves them server-side
+ * (verified in bb's thread-default-policy resolveCreateThreadExecutionDefaults —
+ * requested ?? project stored default ?? first available provider; it errors only
+ * when no provider exists at all). So `vch new "prompt"` with no flags is valid.
  */
 export async function spawnThread(sdk: BBSdk, params: SpawnParams): Promise<string | null> {
   const response = await sdk.threads.spawn({
