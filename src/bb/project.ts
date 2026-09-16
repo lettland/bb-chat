@@ -9,6 +9,11 @@ export interface ProjectLike {
   sources: ReadonlyArray<{ type: string; path?: string | undefined }>;
 }
 
+/** List all projects (for the global home). */
+export function listProjects(sdk: BBSdk, signal?: AbortSignal): Promise<unknown[]> {
+  return sdk.projects.list({ signal }) as Promise<unknown[]>;
+}
+
 /** Structural subset of a BB host. */
 export interface HostLike {
   id: string;

@@ -1,5 +1,6 @@
 import type { BBSdk } from "../bb/sdk.ts";
 import { Navigator } from "./navigator.ts";
+import { GlobalHomeView } from "./views/global-home-view.ts";
 import { MessageView } from "./views/message-view.ts";
 import { SpawnWizardView } from "./views/spawn-wizard-view.ts";
 import { ThreadListView } from "./views/thread-list-view.ts";
@@ -47,11 +48,7 @@ export async function runChat(ctx: ChatContext): Promise<void> {
   if (ctx.initialThreadId) {
     await navigator.push(new ThreadView(ctx.sdk, ctx.initialThreadId, ctx.initialThreadId));
   } else if (ctx.global) {
-    await navigator.push(
-      new MessageView("global home", [
-        "All-projects home lands next. For now, run vch inside a project directory.",
-      ]),
-    );
+    await navigator.push(new GlobalHomeView(ctx.sdk));
   } else if (ctx.project) {
     await navigator.push(new ThreadListView(ctx.sdk, ctx.project));
     if (ctx.openWizard) await navigator.push(new SpawnWizardView(ctx.sdk, ctx.project));
