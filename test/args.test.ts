@@ -47,12 +47,15 @@ describe("parseArgs", () => {
       provider: "codex",
       model: "gpt",
       mode: "auto",
-      env: null,
       prompt: "do it",
     });
   });
 
   test("new flag missing value throws", () => {
     expect(() => parseArgs(["new", "--provider"])).toThrow();
+  });
+
+  test("providers", () => {
+    expect(parseArgs(["providers"])).toEqual({ kind: "providers" });
   });
 });

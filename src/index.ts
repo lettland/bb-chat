@@ -1,14 +1,17 @@
 #!/usr/bin/env bun
 import { ensureServer } from "./bb/ensure-server.ts";
 import { resolveProject } from "./bb/project.ts";
+import { spawnThread } from "./bb/providers.ts";
 import { createSdk } from "./bb/sdk.ts";
 import { parseArgs } from "./cli/args.ts";
 import { runDoctor } from "./cli/doctor.ts";
 import { runInit } from "./cli/init.ts";
+import { runProviders } from "./cli/providers.ts";
 import { resolveConfig } from "./config.ts";
-import { isVchError } from "./errors.ts";
+import { isVchError, VchError } from "./errors.ts";
 import type { ChatContext } from "./tui/app.ts";
 import { runChat } from "./tui/app.ts";
+import { PERMISSION_MODES, type PermissionMode } from "./tui/spawn-wizard.ts";
 import { VERSION } from "./version.ts";
 
 const HELP = `vch ${VERSION} — BB in your terminal
@@ -17,8 +20,9 @@ Usage:
   vch                     Open the current directory's project (creates it if new)
   vch -g, --global        Global home: all projects
   vch <thread-id>         Open a specific thread (thr_...)
-  vch new [flags] [prompt] Start a new thread
-      --provider <id> --model <id> --mode <mode> --env <env>
+  vch new ["prompt"]      Start a thread (interactive picker if no prompt)
+      [--provider <id>] [--model <id>] [--mode <mode>]
+  vch providers           List providers, models, and modes (values for vch new)
   vch init [--yes] [--force] [--print]   Detect system-local BB, write editable config
   vch doctor              Diagnose config + BB reachability
   vch help | version
@@ -65,6 +69,54 @@ async function runChatCommand(
   process.exit(0);
 }
 
+/**
+ * `vch new`. With a prompt, quick-spawns a thread using the given
+ * provider/model/mode (project-default environment) and opens it. Without a
+ * prompt, opens the interactive spawn wizard.
+ */
+async function runNew(
+  provider: string | null,
+  model: string | null,
+  mode: string | null,
+  prompt: string | null,
+): Promise<number> {
+  if (!prompt) return runChatCommand(false, null, true);
+
+  if (mode !== null && !(PERMISSION_MODES as readonly string[]).includes(mode)) {
+    throw new VchError(
+      `invalid --mode "${mode}"`,
+      `expected one of: ${PERMISSION_MODES.join(", ")}`,
+    );
+  }
+
+  const config = await resolveConfig();
+  const server = await ensureServer(config);
+  const sdk = createSdk(server.serverUrl);
+  const resolved = await resolveProject(sdk, process.cwd());
+  const threadId = await spawnThread(sdk, {
+    projectId: resolved.id,
+    providerId: provider,
+    model,
+    permissionMode: mode as PermissionMode | null,
+    prompt,
+  });
+  if (!threadId) throw new VchError("BB did not return a new thread id.");
+
+  if (!process.stdout.isTTY) {
+    process.stdout.write(`Created ${threadId}\n`);
+    return 0;
+  }
+  await runChat({
+    sdk,
+    serverUrl: server.serverUrl,
+    project: { id: resolved.id, name: resolved.name },
+    global: false,
+    initialThreadId: threadId,
+    openWizard: false,
+  });
+  process.exit(0);
+}
+
 async function main(): Promise<number> {
   const command = parseArgs(Bun.argv.slice(2));
   switch (command.kind) {
@@ -78,10 +130,12 @@ async function main(): Promise<number> {
       return runInit(command);
     case "doctor":
       return runDoctor();
+    case "providers":
+      return runProviders();
     case "chat":
       return runChatCommand(command.global, command.threadId);
     case "new":
-      return runChatCommand(false, null, true);
+      return runNew(command.provider, command.model, command.mode, command.prompt);
   }
 }
 

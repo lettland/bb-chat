@@ -6,10 +6,10 @@ export type Command =
       provider: string | null;
       model: string | null;
       mode: string | null;
-      env: string | null;
       prompt: string | null;
     }
   | { kind: "init"; yes: boolean; force: boolean; print: boolean }
+  | { kind: "providers" }
   | { kind: "doctor" }
   | { kind: "help" }
   | { kind: "version" };
@@ -39,6 +39,7 @@ export function parseArgs(argv: string[]): Command {
   if (first === "-h" || first === "--help" || first === "help") return { kind: "help" };
   if (first === "-v" || first === "--version" || first === "version") return { kind: "version" };
   if (first === "doctor") return { kind: "doctor" };
+  if (first === "providers") return { kind: "providers" };
 
   if (first === "init") {
     return {
@@ -61,7 +62,6 @@ function parseNew(rest: string[]): Command {
   let provider: string | null = null;
   let model: string | null = null;
   let mode: string | null = null;
-  let env: string | null = null;
   let prompt: string | null = null;
 
   for (let i = 0; i < rest.length; i++) {
@@ -80,15 +80,11 @@ function parseNew(rest: string[]): Command {
         mode = takeValue(rest, i, token);
         i++;
         break;
-      case "--env":
-        env = takeValue(rest, i, token);
-        i++;
-        break;
       default:
         if (!token.startsWith("-") && prompt === null) prompt = token;
         break;
     }
   }
 
-  return { kind: "new", provider, model, mode, env, prompt };
+  return { kind: "new", provider, model, mode, prompt };
 }

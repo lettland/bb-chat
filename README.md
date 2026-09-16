@@ -34,7 +34,8 @@ data layers checked against a live BB; broaden coverage as you use it.
 vch                      Open the current directory's project (creates it if new)
 vch -g, --global         Global home: all projects
 vch <thread-id>          Open a specific thread (thr_...)
-vch new [flags] [prompt] Start a new thread (opens the spawn wizard)
+vch new ["prompt"]       Start a thread ([--provider][--model][--mode], or interactive)
+vch providers            List providers, models, and modes (values for vch new)
 vch init [--print]       Detect system-local BB, write an editable config
 vch doctor               Diagnose config + BB reachability
 vch help | version
