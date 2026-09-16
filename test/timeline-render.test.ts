@@ -2,20 +2,44 @@ import { describe, expect, test } from "bun:test";
 import { renderTimelineRows, renderTimelineText } from "../src/tui/timeline-render.ts";
 
 describe("renderTimelineRows", () => {
-  test("conversation rows carry role tone and label, separated by a blank line", () => {
+  test("conversation rows get a gutter header and role tone, blank line between", () => {
     const lines = renderTimelineRows([
       { kind: "conversation", role: "user", text: "hello" },
       { kind: "conversation", role: "assistant", text: "hi there" },
     ]);
-    expect(lines.map((l) => l.text)).toEqual(["you: hello", "", "assistant: hi there"]);
+    expect(lines.map((l) => l.text)).toEqual(["▌ you", "hello", "", "▌ assistant", "hi there"]);
     expect(lines[0]?.tone).toBe("user");
-    expect(lines[2]?.tone).toBe("assistant");
+    expect(lines[1]?.tone).toBe("user");
+    expect(lines[3]?.tone).toBe("assistant");
   });
 
-  test("multiline conversation text indents continuation lines under the text", () => {
+  test("multiline conversation text keeps body lines at column 0 (wrap-safe)", () => {
     const lines = renderTimelineRows([{ kind: "conversation", role: "user", text: "a\nb" }]);
-    // "you: " is 5 columns, so "b" aligns under "a".
-    expect(lines.map((l) => l.text)).toEqual(["you: a", "     b"]);
+    expect(lines.map((l) => l.text)).toEqual(["▌ you", "a", "b"]);
+  });
+
+  test("a horizontal rule separates successive exchanges", () => {
+    const lines = renderTimelineRows(
+      [
+        { kind: "conversation", role: "user", text: "A" },
+        { kind: "conversation", role: "assistant", text: "a" },
+        { kind: "conversation", role: "user", text: "B" },
+      ],
+      { ruleWidth: 10 },
+    );
+    expect(lines.map((l) => l.text)).toEqual([
+      "▌ you",
+      "A",
+      "",
+      "▌ assistant",
+      "a",
+      "",
+      "─".repeat(10),
+      "",
+      "▌ you",
+      "B",
+    ]);
+    expect(lines.find((l) => l.text.startsWith("─"))?.tone).toBe("meta");
   });
 
   test("work rows render a title per work kind", () => {
@@ -50,7 +74,7 @@ describe("renderTimelineRows", () => {
         ],
       },
     ]);
-    expect(lines.map((l) => l.text)).toEqual(["assistant: working", "✓ $ go test"]);
+    expect(lines.map((l) => l.text)).toEqual(["▌ assistant", "working", "  ✓ $ go test"]);
   });
 
   test("unknown kinds and non-objects are skipped", () => {

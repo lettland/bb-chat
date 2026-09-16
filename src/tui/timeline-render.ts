@@ -25,13 +25,12 @@ function firstNonEmpty(rec: Record<string, unknown>, keys: string[]): string {
   return "";
 }
 
-/** Push each physical line of `text`, prefixing the first with `label`. */
-function pushText(out: DisplayLine[], label: string, text: string, tone: LineTone): void {
-  const lines = text.split("\n");
-  const [head = "", ...tail] = lines;
-  out.push({ text: label ? `${label} ${head}`.trimEnd() : head, tone });
-  const indent = label ? " ".repeat(label.length + 1) : "";
-  for (const line of tail) out.push({ text: `${indent}${line}`.trimEnd(), tone });
+/** Left gutter marker on a message's role header, e.g. "▌ you". */
+const GUTTER = "▌";
+
+/** Push each physical line of `text`, optionally indented, under one tone. */
+function pushLines(out: DisplayLine[], text: string, tone: LineTone, indent = ""): void {
+  for (const line of text.split("\n")) out.push({ text: `${indent}${line}`.trimEnd(), tone });
 }
 
 function statusGlyph(status: string): string {
@@ -87,40 +86,58 @@ function workTitle(rec: Record<string, unknown>, workKind: string): string {
   }
 }
 
-function renderRow(row: unknown, out: DisplayLine[]): void {
+interface RenderContext {
+  /** Width (columns) of the horizontal rule drawn between exchanges. */
+  ruleWidth: number;
+}
+
+/**
+ * A conversation message: a role header ("▌ you" / "▌ assistant") over the body.
+ * Successive exchanges are separated by a horizontal rule before each user
+ * message; within an exchange, a blank line precedes the assistant reply.
+ */
+function renderConversation(
+  rec: Record<string, unknown>,
+  out: DisplayLine[],
+  ctx: RenderContext,
+): void {
+  const isAssistant = rec.role === "assistant";
+  if (out.length > 0) {
+    if (!isAssistant)
+      out.push({ text: "", tone: "meta" }, { text: "─".repeat(ctx.ruleWidth), tone: "meta" });
+    out.push({ text: "", tone: "meta" });
+  }
+  const tone: LineTone = isAssistant ? "assistant" : "user";
+  out.push({ text: `${GUTTER} ${isAssistant ? "assistant" : "you"}`, tone });
+  pushLines(out, str(rec, "text"), tone);
+}
+
+function renderRow(row: unknown, out: DisplayLine[], ctx: RenderContext): void {
   if (!row || typeof row !== "object") return;
   const rec = row as Record<string, unknown>;
   switch (str(rec, "kind")) {
-    case "conversation": {
-      const isAssistant = rec.role === "assistant";
-      // Blank line between turns so the transcript reads as distinct messages.
-      if (out.length > 0) out.push({ text: "", tone: "meta" });
-      pushText(
-        out,
-        isAssistant ? "assistant:" : "you:",
-        str(rec, "text"),
-        isAssistant ? "assistant" : "user",
-      );
+    case "conversation":
+      renderConversation(rec, out, ctx);
       return;
-    }
     case "work": {
       const workKind = str(rec, "workKind");
       const attention = ATTENTION_WORK_KINDS.has(workKind);
       const glyph = attention ? "!" : statusGlyph(str(rec, "status"));
+      // Indent activity so it reads as nested under the assistant's message.
       out.push({
-        text: `${glyph} ${workTitle(rec, workKind)}`,
+        text: `  ${glyph} ${workTitle(rec, workKind)}`,
         tone: attention ? "attention" : "work",
       });
       return;
     }
     case "system": {
       const text = firstNonEmpty(rec, ["text", "message"]);
-      if (text) pushText(out, "", text, "system");
+      if (text) pushLines(out, text, "system", "  ");
       return;
     }
     case "turn": {
       const children = rec.children;
-      if (Array.isArray(children)) for (const child of children) renderRow(child, out);
+      if (Array.isArray(children)) for (const child of children) renderRow(child, out, ctx);
       return;
     }
     default:
@@ -128,10 +145,19 @@ function renderRow(row: unknown, out: DisplayLine[]): void {
   }
 }
 
+/** How wide to draw exchange-separating rules when the caller gives no width. */
+const DEFAULT_RULE_WIDTH = 48;
+
 /** Flatten timeline rows (recursing into turns) into display lines. */
-export function renderTimelineRows(rows: readonly unknown[]): DisplayLine[] {
+export function renderTimelineRows(
+  rows: readonly unknown[],
+  opts: { ruleWidth?: number } = {},
+): DisplayLine[] {
+  const ctx: RenderContext = {
+    ruleWidth: Math.max(8, Math.min(opts.ruleWidth ?? DEFAULT_RULE_WIDTH, 200)),
+  };
   const out: DisplayLine[] = [];
-  for (const row of rows) renderRow(row, out);
+  for (const row of rows) renderRow(row, out, ctx);
   return out;
 }
 

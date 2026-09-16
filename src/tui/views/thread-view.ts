@@ -22,8 +22,9 @@ const COMPOSER_BORDER = "#4EC9B0";
  * A single thread: a colored, per-role transcript in a scrollable region above a
  * bordered composer. The transcript is a real ScrollBox — it holds the FULL
  * thread, follows the latest (sticky bottom), and scrolls by mouse wheel, the
- * scrollbar, and PgUp/PgDn/↑/↓/Home/End. User / assistant / tool activity are
- * distinguished by color (toneColor), with blank lines between turns.
+ * scrollbar, and PgUp/PgDn/↑/↓/Home/End. Each message gets a "▌ you" / "▌
+ * assistant" gutter header colored by role (toneColor); tool activity is indented
+ * under it; a horizontal rule separates successive exchanges.
  */
 export class ThreadView implements View {
   /** Composer inputs intercepted as commands; everything else (incl. "/paths") sends. */
@@ -231,7 +232,12 @@ export class ThreadView implements View {
     }
     this.refreshing = true;
     try {
-      const lines = renderTimelineRows(await getTimelineRows(this.sdk, this.threadId));
+      // Rules span the transcript width: terminal columns minus the ScrollBox's
+      // left/right padding and scrollbar gutter.
+      const ruleWidth = Math.max(8, (process.stdout.columns ?? 80) - 4);
+      const lines = renderTimelineRows(await getTimelineRows(this.sdk, this.threadId), {
+        ruleWidth,
+      });
       this.body.content = new StyledText(
         (lines.length > 0 ? lines : [{ text: "(no messages yet)", tone: "meta" as const }]).map(
           (line) => fg(toneColor(line.tone))(`${line.text.length > 0 ? line.text : " "}\n`),
