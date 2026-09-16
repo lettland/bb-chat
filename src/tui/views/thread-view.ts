@@ -1,16 +1,17 @@
-import { BoxRenderable, type KeyEvent, TextRenderable } from "@opentui/core";
+import { BoxRenderable, fg, type KeyEvent, StyledText, TextRenderable } from "@opentui/core";
 import type { BBSdk } from "../../bb/sdk.ts";
 import { getTimelineRows, sendText, type Unsubscribe, watchThread } from "../../bb/threads.ts";
 import { InputBuffer } from "../input-buffer.ts";
 import type { View, ViewHost } from "../navigator.ts";
 import { type DisplayLine, renderTimelineRows, toneColor } from "../timeline-render.ts";
-import { errorText } from "../util.ts";
+import { errorText, wrapText } from "../util.ts";
 import { DiffView } from "./diff-view.ts";
 import { TerminalsView } from "./terminals-view.ts";
 
 const HEADER_FG = "#6A737D";
 const COMPOSER_BORDER = "#4EC9B0";
 const ROWS_OVERHEAD = 8; // header + status + bordered composer + margins
+const COLS_OVERHEAD = 4; // transcript padding + margins
 
 /**
  * A single thread: a colored, per-role transcript above a bordered composer.
@@ -22,7 +23,7 @@ export class ThreadView implements View {
   readonly title = "thread";
   private host!: ViewHost;
   private box: BoxRenderable | null = null;
-  private transcript: BoxRenderable | null = null;
+  private transcript: TextRenderable | null = null;
   private status: TextRenderable | null = null;
   private composer: TextRenderable | null = null;
   private readonly input = new InputBuffer();
@@ -46,10 +47,9 @@ export class ThreadView implements View {
       }),
     );
 
-    this.transcript = new BoxRenderable(host.renderer, {
-      flexDirection: "column",
+    this.transcript = new TextRenderable(host.renderer, {
+      content: "",
       flexGrow: 1,
-      overflow: "hidden",
       paddingLeft: 1,
       paddingRight: 1,
     });
@@ -145,22 +145,25 @@ export class ThreadView implements View {
     }
   }
 
-  /** Rebuild the transcript with one colored line per row, showing the latest that fit. */
+  /**
+   * Render the transcript as one styled text block. Lines are word-wrapped to the
+   * terminal width up front (so the renderer never re-wraps and overlaps rows),
+   * colored per role, and tail-sliced to the visible height so the composer stays
+   * pinned and the latest content shows.
+   */
   private setTranscript(lines: DisplayLine[]): void {
-    const box = this.transcript;
-    if (!box) return;
-    for (const child of [...box.getChildren()]) {
-      box.remove(child);
-      child.destroy();
+    const target = this.transcript;
+    if (!target) return;
+    const cols = Math.max(20, (process.stdout.columns ?? 100) - COLS_OVERHEAD);
+    const height = Math.max(5, (process.stdout.rows ?? 40) - ROWS_OVERHEAD);
+
+    const wrapped: DisplayLine[] = [];
+    for (const line of lines) {
+      for (const piece of wrapText(line.text, cols)) wrapped.push({ text: piece, tone: line.tone });
     }
-    const cap = Math.max(5, (process.stdout.rows ?? 40) - ROWS_OVERHEAD);
-    for (const line of lines.slice(-cap)) {
-      box.add(
-        new TextRenderable(this.host.renderer, {
-          content: line.text.length > 0 ? line.text : " ",
-          fg: toneColor(line.tone),
-        }),
-      );
-    }
+    const shown = wrapped.slice(-height);
+    target.content = new StyledText(
+      shown.map((line) => fg(toneColor(line.tone))(`${line.text.length > 0 ? line.text : " "}\n`)),
+    );
   }
 }
