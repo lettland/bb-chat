@@ -5,11 +5,50 @@
  * tolerates unknown work kinds gracefully (D2 — no dependency on @bb/thread-view).
  */
 
-export type LineTone = "user" | "assistant" | "work" | "system" | "attention" | "meta";
+/**
+ * Semantic role of a rendered line, mapped to a distinct color by `toneColor`:
+ * your input, the assistant's prose, a tool/command call, a subagent ("agent")
+ * invocation, a file edit, tool output (the response), something needing your
+ * attention (question/approval), an error, a system note, or dim meta/separators.
+ */
+export type LineTone =
+  | "user"
+  | "assistant"
+  | "toolcall"
+  | "agent"
+  | "edit"
+  | "output"
+  | "attention"
+  | "error"
+  | "system"
+  | "meta";
 
 export interface DisplayLine {
   text: string;
   tone: LineTone;
+}
+
+/** A selectable/expandable tool row and the line index of its call in the transcript. */
+export interface ToolAnchor {
+  id: string;
+  line: number;
+}
+
+/** The rendered transcript: display lines plus the expandable tool anchors within. */
+export interface Transcript {
+  lines: DisplayLine[];
+  anchors: ToolAnchor[];
+}
+
+export interface RenderOptions {
+  /** Width of the exchange-separating rule (columns). */
+  ruleWidth?: number;
+  /** Ids of tool rows whose full output should be shown instead of a preview. */
+  expanded?: ReadonlySet<string>;
+  /** Id of the tool row under the selection cursor (marked with "❯"). */
+  selectedId?: string | null;
+  /** Cap on output lines shown when a tool is expanded. */
+  maxOutputLines?: number;
 }
 
 function str(rec: Record<string, unknown>, key: string): string {
@@ -54,6 +93,35 @@ function statusGlyph(status: string): string {
 }
 
 const ATTENTION_WORK_KINDS = new Set(["approval", "question"]);
+const ERROR_STATUS = new Set(["error", "failed", "denied", "cancelled"]);
+
+/** Work kinds whose call line gets a non-default tone (else "toolcall"). */
+const WORK_TONE: Record<string, LineTone> = {
+  "file-change": "edit",
+  delegation: "agent",
+  workflow: "agent",
+  approval: "attention",
+  question: "attention",
+};
+
+const PREVIEW_CAP = 120;
+const DEFAULT_MAX_OUTPUT = 200;
+const EMPTY_SET: ReadonlySet<string> = new Set();
+
+/** Stable id for a work row (for expand tracking / selection). */
+function workId(rec: Record<string, unknown>): string {
+  return str(rec, "id") || str(rec, "callId");
+}
+
+/** A work row's output split into lines, with surrounding blank lines trimmed. */
+function outputBody(rec: Record<string, unknown>): string[] {
+  const lines = str(rec, "output")
+    .split("\n")
+    .map((l) => l.replace(/\s+$/, ""));
+  while (lines.length > 0 && lines[0] === "") lines.shift();
+  while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  return lines;
+}
 
 function workTitle(rec: Record<string, unknown>, workKind: string): string {
   switch (workKind) {
@@ -89,6 +157,61 @@ function workTitle(rec: Record<string, unknown>, workKind: string): string {
 interface RenderContext {
   /** Width (columns) of the horizontal rule drawn between exchanges. */
   ruleWidth: number;
+  expanded: ReadonlySet<string>;
+  selectedId: string | null;
+  maxOutputLines: number;
+  anchors: ToolAnchor[];
+}
+
+/**
+ * A tool/command/edit row: an indented call line (glyph + title), then its output
+ * as either a one-line preview with a "▸ +N lines" affordance (collapsed) or the
+ * full body (expanded). The call carries the selection cursor ("❯") and its tone
+ * encodes the category (call/edit/agent/attention) or "error" when it failed.
+ */
+function renderWork(rec: Record<string, unknown>, out: DisplayLine[], ctx: RenderContext): void {
+  const workKind = str(rec, "workKind");
+  const status = str(rec, "status");
+  const errored = ERROR_STATUS.has(status);
+  const attention = ATTENTION_WORK_KINDS.has(workKind);
+  const glyph = attention ? "!" : statusGlyph(status);
+  const tone: LineTone = errored ? "error" : (WORK_TONE[workKind] ?? "toolcall");
+
+  const id = workId(rec);
+  const body = outputBody(rec);
+  const expandable = body.length > 0 && (body.length > 1 || (body[0]?.length ?? 0) > PREVIEW_CAP);
+  const expanded = id.length > 0 && ctx.expanded.has(id);
+  const selected = ctx.selectedId != null && id === ctx.selectedId;
+
+  if (id.length > 0 && expandable) ctx.anchors.push({ id, line: out.length });
+
+  const marker = selected ? "❯" : " ";
+  const affordance = expandable ? (expanded ? "  ▾" : `  ▸ +${body.length} lines`) : "";
+  out.push({ text: `${marker} ${glyph} ${workTitle(rec, workKind)}${affordance}`.trimEnd(), tone });
+
+  if (body.length > 0) renderWorkOutput(body, expanded, errored, ctx.maxOutputLines, out);
+}
+
+/** Output under a work call: the full body when expanded, else a one-line preview. */
+function renderWorkOutput(
+  body: string[],
+  expanded: boolean,
+  errored: boolean,
+  maxOutputLines: number,
+  out: DisplayLine[],
+): void {
+  const tone: LineTone = errored ? "error" : "output";
+  if (!expanded) {
+    const first = body.find((l) => l.trim().length > 0) ?? "";
+    const preview = first.length > PREVIEW_CAP ? `${first.slice(0, PREVIEW_CAP - 1)}…` : first;
+    if (preview.length > 0) out.push({ text: `      ${preview}`, tone });
+    return;
+  }
+  const shown = body.slice(0, maxOutputLines);
+  for (const line of shown) out.push({ text: `      ${line}`.replace(/\s+$/, ""), tone });
+  if (body.length > shown.length) {
+    out.push({ text: `      … +${body.length - shown.length} more lines`, tone: "meta" });
+  }
 }
 
 /**
@@ -119,17 +242,9 @@ function renderRow(row: unknown, out: DisplayLine[], ctx: RenderContext): void {
     case "conversation":
       renderConversation(rec, out, ctx);
       return;
-    case "work": {
-      const workKind = str(rec, "workKind");
-      const attention = ATTENTION_WORK_KINDS.has(workKind);
-      const glyph = attention ? "!" : statusGlyph(str(rec, "status"));
-      // Indent activity so it reads as nested under the assistant's message.
-      out.push({
-        text: `  ${glyph} ${workTitle(rec, workKind)}`,
-        tone: attention ? "attention" : "work",
-      });
+    case "work":
+      renderWork(rec, out, ctx);
       return;
-    }
     case "system": {
       const text = firstNonEmpty(rec, ["text", "message"]);
       if (text) pushLines(out, text, "system", "  ");
@@ -148,17 +263,29 @@ function renderRow(row: unknown, out: DisplayLine[], ctx: RenderContext): void {
 /** How wide to draw exchange-separating rules when the caller gives no width. */
 const DEFAULT_RULE_WIDTH = 48;
 
-/** Flatten timeline rows (recursing into turns) into display lines. */
-export function renderTimelineRows(
-  rows: readonly unknown[],
-  opts: { ruleWidth?: number } = {},
-): DisplayLine[] {
+/**
+ * Flatten timeline rows (recursing into turns) into a transcript: display lines
+ * plus the expandable tool anchors, honoring the expand/selection options.
+ */
+export function renderTranscript(rows: readonly unknown[], opts: RenderOptions = {}): Transcript {
   const ctx: RenderContext = {
     ruleWidth: Math.max(8, Math.min(opts.ruleWidth ?? DEFAULT_RULE_WIDTH, 200)),
+    expanded: opts.expanded ?? EMPTY_SET,
+    selectedId: opts.selectedId ?? null,
+    maxOutputLines: Math.max(1, opts.maxOutputLines ?? DEFAULT_MAX_OUTPUT),
+    anchors: [],
   };
   const out: DisplayLine[] = [];
   for (const row of rows) renderRow(row, out, ctx);
-  return out;
+  return { lines: out, anchors: ctx.anchors };
+}
+
+/** Flatten timeline rows into display lines (convenience over `renderTranscript`). */
+export function renderTimelineRows(
+  rows: readonly unknown[],
+  opts: RenderOptions = {},
+): DisplayLine[] {
+  return renderTranscript(rows, opts).lines;
 }
 
 /** Convenience: the rendered timeline as plain text. */
@@ -169,22 +296,23 @@ export function renderTimelineText(rows: readonly unknown[]): string {
 }
 
 /**
- * Terminal color (hex) per line tone, so the reader can tell apart their own
- * messages (user), the assistant, tool/command activity, and system notes.
+ * Terminal color (hex) per line tone, so the reader can tell apart, at a glance,
+ * their own input, the assistant, tool calls, subagents, edits, tool output,
+ * things needing attention, and errors.
  */
+const TONE_COLOR: Record<LineTone, string> = {
+  user: "#4EC9B0", // teal — you (the human)
+  assistant: "#E6E6E6", // near-white — the assistant
+  toolcall: "#569CD6", // blue — tool / command calls
+  agent: "#C586C0", // purple — subagent / workflow invocations
+  edit: "#89D185", // green — file edits
+  output: "#808893", // gray — tool output (the response)
+  attention: "#E5C07B", // amber — approvals / questions
+  error: "#E06C75", // red — failed / denied work
+  system: "#6A737D", // dim — system notes
+  meta: "#4B5263", // dimmest — separators / meta
+};
+
 export function toneColor(tone: LineTone): string {
-  switch (tone) {
-    case "user":
-      return "#4EC9B0"; // teal — you (the human)
-    case "assistant":
-      return "#E6E6E6"; // near-white — the assistant
-    case "work":
-      return "#7A8290"; // gray — tools / commands
-    case "attention":
-      return "#E5C07B"; // amber — approvals / questions
-    case "system":
-      return "#6A737D"; // dim — system notes
-    case "meta":
-      return "#4B5263"; // dimmest — separators / meta
-  }
+  return TONE_COLOR[tone];
 }

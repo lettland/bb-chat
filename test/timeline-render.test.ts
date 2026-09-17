@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { renderTimelineRows, renderTimelineText } from "../src/tui/timeline-render.ts";
+import {
+  renderTimelineRows,
+  renderTimelineText,
+  renderTranscript,
+} from "../src/tui/timeline-render.ts";
 
 describe("renderTimelineRows", () => {
   test("conversation rows get a gutter header and role tone, blank line between", () => {
@@ -62,6 +66,76 @@ describe("renderTimelineRows", () => {
     expect(lines[0]?.text).toContain("approval needed");
     expect(lines[1]?.tone).toBe("attention");
     expect(lines[1]?.text).toContain("proceed?");
+  });
+
+  test("work tones distinguish calls, edits, agents, and errors", () => {
+    const lines = renderTimelineRows([
+      { kind: "work", workKind: "command", status: "success", command: "ls" },
+      { kind: "work", workKind: "file-change", status: "success", path: "a.ts" },
+      { kind: "work", workKind: "delegation", status: "running", description: "sub" },
+      { kind: "work", workKind: "command", status: "error", command: "boom" },
+    ]);
+    const byText = (needle: string) => lines.find((l) => l.text.includes(needle));
+    expect(byText("$ ls")?.tone).toBe("toolcall");
+    expect(byText("edit a.ts")?.tone).toBe("edit");
+    expect(byText("delegate sub")?.tone).toBe("agent");
+    expect(byText("$ boom")?.tone).toBe("error");
+  });
+
+  test("tool output collapses to a dim preview with an affordance", () => {
+    const lines = renderTimelineRows([
+      {
+        kind: "work",
+        workKind: "command",
+        id: "c1",
+        status: "success",
+        command: "ls",
+        output: "a\nb\nc",
+      },
+    ]);
+    // call line advertises hidden lines; preview shows the first line, indented + dim.
+    expect(lines[0]?.text).toContain("▸ +3 lines");
+    expect(lines[1]?.text).toBe("      a");
+    expect(lines[1]?.tone).toBe("output");
+  });
+
+  test("expanding a tool shows its full output and records an anchor", () => {
+    const rows = [
+      {
+        kind: "work",
+        workKind: "command",
+        id: "c1",
+        status: "success",
+        command: "ls",
+        output: "a\nb\nc",
+      },
+    ];
+    const collapsed = renderTranscript(rows);
+    expect(collapsed.anchors).toEqual([{ id: "c1", line: 0 }]);
+
+    const expanded = renderTranscript(rows, { expanded: new Set(["c1"]), selectedId: "c1" });
+    expect(expanded.lines[0]?.text.startsWith("❯")).toBe(true); // selection cursor
+    expect(expanded.lines[0]?.text).toContain("▾");
+    expect(expanded.lines.slice(1, 4).map((l) => l.text)).toEqual([
+      "      a",
+      "      b",
+      "      c",
+    ]);
+  });
+
+  test("errored tool output is error-toned", () => {
+    const t = renderTranscript([
+      {
+        kind: "work",
+        workKind: "command",
+        id: "x",
+        status: "error",
+        command: "boom",
+        output: "stack\ntrace",
+      },
+    ]);
+    expect(t.lines[0]?.tone).toBe("error");
+    expect(t.lines[1]?.tone).toBe("error");
   });
 
   test("turn rows flatten their children", () => {
