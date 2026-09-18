@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  applyPreset,
   buildSpawnParams,
   type Choice,
   chooseMode,
@@ -86,6 +87,7 @@ describe("wizard flow", () => {
       providerId: "codex",
       model: "gpt-6",
       permissionMode: "auto",
+      reasoningLevel: null,
       prompt: "build it",
     });
   });
@@ -97,7 +99,58 @@ describe("wizard flow", () => {
       providerId: null,
       model: null,
       permissionMode: null,
+      reasoningLevel: null,
       prompt: "hello",
     });
+  });
+
+  test("applyPreset: full preset lands on the prompt step", () => {
+    const models: Choice[] = [{ id: "gpt-5.6-sol", label: "sol" }];
+    const s = applyPreset(initWizard(providers), models, {
+      providerId: "codex",
+      model: "gpt-5.6-sol",
+      reasoningLevel: "high",
+      permissionMode: "auto",
+    });
+    expect(s.step).toBe("prompt");
+    expect(s.provider?.id).toBe("codex");
+    expect(s.model?.id).toBe("gpt-5.6-sol");
+    expect(s.reasoning).toBe("high");
+    expect(s.mode).toBe("auto");
+  });
+
+  test("applyPreset: mode-without-model still lands on the model step", () => {
+    const models: Choice[] = [{ id: "gpt-5.6-sol", label: "sol" }];
+    const s = applyPreset(initWizard(providers), models, {
+      providerId: "codex",
+      model: null,
+      reasoningLevel: null,
+      permissionMode: "auto",
+    });
+    expect(s.step).toBe("model");
+    expect(s.mode).toBe("auto"); // preset mode is retained, not dropped
+    expect(s.models).toEqual(models);
+  });
+
+  test("applyPreset: unknown provider id leaves the wizard unchanged", () => {
+    const base = initWizard(providers);
+    const s = applyPreset(base, [], {
+      providerId: "nonexistent",
+      model: null,
+      reasoningLevel: null,
+      permissionMode: null,
+    });
+    expect(s).toBe(base);
+  });
+
+  test("applyPreset: a stale model id degrades to the model step", () => {
+    const s = applyPreset(initWizard(providers), [{ id: "gpt-5.6-sol", label: "sol" }], {
+      providerId: "codex",
+      model: "gone-model",
+      reasoningLevel: null,
+      permissionMode: null,
+    });
+    expect(s.step).toBe("model");
+    expect(s.model).toBeNull();
   });
 });

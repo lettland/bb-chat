@@ -32,15 +32,35 @@ data layers checked against a live BB; broaden coverage as you use it.
 
 ```
 vch                      Open the current directory's project (does not create one)
+vch <provider> [model] [reasoning] [mode]
+                         Open the thread list with those new-thread defaults
+                         (opens the list, does not spawn; tokens are order-independent)
 vch -g, --global         Global home: all projects
 vch <thread-id>          Open a specific thread (thr_...)
 vch threads              List this project's threads and their ids
-vch new ["prompt"]       Start a thread ([--provider][--model][--mode], or interactive)
-vch providers            List providers, models, and modes (values for vch new)
+vch new ["prompt"]       Start a thread ([--provider][--model][--reasoning][--mode], or interactive)
+vch providers            List providers, models, reasoning levels, and modes
 vch init [--print]       Detect system-local BB, write an editable config
 vch doctor               Diagnose config + BB reachability
 vch help | version
 ```
+
+**Shorthand.** `vch <provider>` opens the current project's thread list (exactly
+like bare `vch`) but seeds the provider/model/reasoning/mode a *new* thread will
+use — the thread list shows the active default, and pressing `n` opens the spawn
+wizard pre-filled. Tokens after the provider are matched by what they are, in any
+order, and fuzzy: provider and model aliases resolve against the server's live
+lists (`codex`, `claude`, `opencode`; `5.6-sol`→`gpt-5.6-sol`), reasoning is one of
+`none|low|medium|high|xhigh|ultracode|max|ultra`, mode is `accept-edits|auto|full`.
+
+```
+vch codex 5.6-sol high     # codex, gpt-5.6-sol, reasoning high
+vch claude 'opus-5[1m]'    # claude-code, claude-opus-5[1m]  ← quote [brackets]
+vch codex                  # just default the provider to codex
+```
+
+Quote models containing `[brackets]` so your shell doesn't treat them as a glob.
+Run `vch providers` for the exact provider/model/reasoning/mode values.
 
 In-app keys: `↑/↓` move · `enter` open/select · `n` new thread · `p` plugins
 (global) / skills (project) · in a thread `ctrl+o` diff · `ctrl+t` terminals ·

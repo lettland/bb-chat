@@ -1,11 +1,18 @@
 /** Parsed `vch` invocation. One variant per subcommand. */
 export type Command =
-  | { kind: "chat"; global: boolean; threadId: string | null }
+  | {
+      kind: "chat";
+      global: boolean;
+      threadId: string | null;
+      /** `vch <provider> [model] [reasoning] [mode]` tokens (flags removed), else null. */
+      spawnTokens: string[] | null;
+    }
   | {
       kind: "new";
       provider: string | null;
       model: string | null;
       mode: string | null;
+      reasoning: string | null;
       prompt: string | null;
       force: boolean;
     }
@@ -37,7 +44,9 @@ function isThreadId(token: string): boolean {
 export function parseArgs(argv: string[]): Command {
   const [first, ...rest] = argv;
 
-  if (first === undefined) return { kind: "chat", global: false, threadId: null };
+  if (first === undefined) {
+    return { kind: "chat", global: false, threadId: null, spawnTokens: null };
+  }
   if (first === "-h" || first === "--help" || first === "help") return { kind: "help" };
   if (first === "-v" || first === "--version" || first === "version") return { kind: "version" };
   if (first === "doctor") return { kind: "doctor" };
@@ -55,16 +64,24 @@ export function parseArgs(argv: string[]): Command {
 
   if (first === "new") return parseNew(rest);
 
-  // Default: chat. Support `-g/--global` and an optional thread-id positional.
+  // Default: chat — `-g/--global`, an optional thread-id positional, or a provider
+  // shorthand (a bare first token that isn't a thread id or a known subcommand).
   const global = argv.includes("-g") || argv.includes("--global");
   const threadId = argv.find((token) => isThreadId(token)) ?? null;
-  return { kind: "chat", global, threadId };
+  if (!first.startsWith("-") && !isThreadId(first)) {
+    // `vch <provider> [model] [reasoning] [mode]`. Flags are filtered out so a
+    // trailing `-g` never reaches option resolution; `global` still comes from argv.
+    const spawnTokens = argv.filter((token) => !token.startsWith("-"));
+    return { kind: "chat", global, threadId: null, spawnTokens };
+  }
+  return { kind: "chat", global, threadId, spawnTokens: null };
 }
 
 function parseNew(rest: string[]): Command {
   let provider: string | null = null;
   let model: string | null = null;
   let mode: string | null = null;
+  let reasoning: string | null = null;
   let prompt: string | null = null;
   let force = false;
 
@@ -84,6 +101,10 @@ function parseNew(rest: string[]): Command {
         mode = takeValue(rest, i, token);
         i++;
         break;
+      case "--reasoning":
+        reasoning = takeValue(rest, i, token);
+        i++;
+        break;
       case "--force":
       case "-f":
         force = true;
@@ -94,5 +115,5 @@ function parseNew(rest: string[]): Command {
     }
   }
 
-  return { kind: "new", provider, model, mode, prompt, force };
+  return { kind: "new", provider, model, mode, reasoning, prompt, force };
 }

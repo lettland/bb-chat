@@ -1,6 +1,7 @@
 import { ensureProject } from "../bb/project.ts";
 import type { BBSdk } from "../bb/sdk.ts";
 import { Navigator } from "./navigator.ts";
+import type { SpawnPreset } from "./spawn-wizard.ts";
 import { GlobalHomeView } from "./views/global-home-view.ts";
 import { MessageView } from "./views/message-view.ts";
 import { SpawnWizardView } from "./views/spawn-wizard-view.ts";
@@ -22,6 +23,8 @@ export interface ChatContext {
    * wizard doesn't register a project).
    */
   newThreadCwd: string | null;
+  /** New-thread defaults resolved from the `vch <provider> …` shorthand, if any. */
+  spawnPreset: SpawnPreset | null;
 }
 
 /**
@@ -78,7 +81,7 @@ export async function runChat(ctx: ChatContext): Promise<void> {
   } else if (ctx.global) {
     await navigator.push(new GlobalHomeView(ctx.sdk));
   } else if (ctx.project) {
-    await navigator.push(new ThreadListView(ctx.sdk, ctx.project));
+    await navigator.push(new ThreadListView(ctx.sdk, ctx.project, ctx.spawnPreset));
   } else {
     await navigator.push(new MessageView("vch", ["No project in focus."]));
   }

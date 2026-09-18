@@ -2,11 +2,17 @@ import { ensureServer } from "../bb/ensure-server.ts";
 import { listModels, listProviders } from "../bb/providers.ts";
 import { createSdk } from "../bb/sdk.ts";
 import { resolveConfig } from "../config.ts";
-import { PERMISSION_MODES, toModelChoices, toProviderChoices } from "../tui/spawn-wizard.ts";
+import {
+  PERMISSION_MODES,
+  REASONING_LEVELS,
+  toModelChoices,
+  toProviderChoices,
+} from "../tui/spawn-wizard.ts";
 
 /**
- * `vch providers` — list the providers, their models, and the permission modes,
- * i.e. the valid values for `vch new --provider/--model/--mode`. Read-only.
+ * `vch providers` — list the providers, their models, the reasoning levels, and
+ * the permission modes: the valid values for `vch new` and the `vch <provider> …`
+ * shorthand. Read-only.
  */
 export async function runProviders(env: NodeJS.ProcessEnv = process.env): Promise<number> {
   const config = await resolveConfig(env);
@@ -31,7 +37,11 @@ export async function runProviders(env: NodeJS.ProcessEnv = process.env): Promis
       lines.push("      (models unavailable)");
     }
   }
-  lines.push("", `Permission modes: --mode ${PERMISSION_MODES.join(" | ")}`);
+  lines.push(
+    "",
+    `Reasoning levels: --reasoning ${REASONING_LEVELS.join(" | ")}`,
+    `Permission modes: --mode ${PERMISSION_MODES.join(" | ")}`,
+  );
   process.stdout.write(`${lines.join("\n")}\n`);
   return 0;
 }

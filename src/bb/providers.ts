@@ -1,3 +1,4 @@
+import type { ReasoningLevel } from "bb-app";
 import type { PermissionMode, SpawnParams } from "../tui/spawn-wizard.ts";
 import type { BBSdk } from "./sdk.ts";
 
@@ -33,6 +34,7 @@ export async function spawnThread(sdk: BBSdk, params: SpawnParams): Promise<stri
     ...(params.providerId ? { providerId: params.providerId } : {}),
     ...(params.model ? { model: params.model } : {}),
     ...permissionModeArg(params.permissionMode),
+    ...(params.reasoningLevel ? { reasoningLevel: params.reasoningLevel as ReasoningLevel } : {}),
     environment: { type: "project-default" },
     prompt: params.prompt,
   });

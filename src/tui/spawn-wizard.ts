@@ -8,6 +8,23 @@
 export const PERMISSION_MODES = ["accept-edits", "auto", "full"] as const;
 export type PermissionMode = (typeof PERMISSION_MODES)[number];
 
+/**
+ * Reasoning levels BB accepts on spawn. Mirrors bb-app's `reasoningLevelSchema`
+ * (node_modules/bb-app/dist/index.d.ts) — re-sync this list if BB's enum changes;
+ * BB still validates the value server-side, so drift only affects local errors.
+ */
+export const REASONING_LEVELS = [
+  "none",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "ultracode",
+  "max",
+  "ultra",
+] as const;
+export type ReasoningLevel = (typeof REASONING_LEVELS)[number];
+
 export interface Choice {
   /** The value passed to the SDK (provider id / model id / mode). */
   id: string;
@@ -25,6 +42,8 @@ export interface WizardState {
   provider: Choice | null;
   model: Choice | null;
   mode: PermissionMode | null;
+  /** Reasoning level, carried from a shorthand preset (no interactive step yet). */
+  reasoning: string | null;
   prompt: string;
 }
 
@@ -35,7 +54,16 @@ export interface SpawnParams {
   providerId: string | null;
   model: string | null;
   permissionMode: PermissionMode | null;
+  reasoningLevel: string | null;
   prompt: string;
+}
+
+/** Pre-selected new-thread options resolved from the `vch <provider> …` shorthand. */
+export interface SpawnPreset {
+  providerId: string;
+  model: string | null;
+  reasoningLevel: string | null;
+  permissionMode: PermissionMode | null;
 }
 
 function str(rec: Record<string, unknown>, key: string): string {
@@ -79,7 +107,33 @@ export function initWizard(providers: Choice[]): WizardState {
     provider: null,
     model: null,
     mode: null,
+    reasoning: null,
     prompt: "",
+  };
+}
+
+/**
+ * Fast-forward a fresh wizard to a shorthand preset. Unlike chooseModel/chooseMode
+ * (which couple set-value with advance-step), this sets every matched field
+ * unconditionally and computes the landing step independently, so a mode-without-
+ * model preset still lands on the model step. Missing ids (a stale/removed provider
+ * or model) are skipped, degrading to the plain wizard rather than crashing.
+ */
+export function applyPreset(base: WizardState, models: Choice[], preset: SpawnPreset): WizardState {
+  const provider = base.providers.find((p) => p.id === preset.providerId);
+  if (!provider) return base;
+  const model = preset.model !== null ? (models.find((m) => m.id === preset.model) ?? null) : null;
+  const mode = preset.permissionMode;
+  const step: WizardStep = model === null ? "model" : mode === null ? "mode" : "prompt";
+  return {
+    ...base,
+    provider,
+    models,
+    model,
+    mode,
+    reasoning: preset.reasoningLevel,
+    step,
+    cursor: 0,
   };
 }
 
@@ -141,6 +195,7 @@ export function buildSpawnParams(state: WizardState, projectId: string): SpawnPa
     providerId: state.provider?.id ?? null,
     model: state.model?.id ?? null,
     permissionMode: state.mode,
+    reasoningLevel: state.reasoning,
     prompt: state.prompt.trim(),
   };
 }

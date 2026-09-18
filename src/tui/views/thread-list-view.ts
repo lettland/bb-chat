@@ -2,11 +2,24 @@ import { BoxRenderable, type KeyEvent, TextRenderable } from "@opentui/core";
 import type { BBSdk } from "../../bb/sdk.ts";
 import { listThreads, type Unsubscribe, watchProject } from "../../bb/threads.ts";
 import type { View, ViewHost } from "../navigator.ts";
+import type { SpawnPreset } from "../spawn-wizard.ts";
 import { formatThreadRow, renderThreadList, type ThreadRow } from "../thread-list-render.ts";
 import { clamp, errorText } from "../util.ts";
 import { SkillsView } from "./skills-view.ts";
 import { SpawnWizardView } from "./spawn-wizard-view.ts";
 import { ThreadView } from "./thread-view.ts";
+
+/** One-line summary of the shorthand-seeded new-thread defaults, or null if none. */
+function presetSummary(preset: SpawnPreset | null): string | null {
+  if (!preset) return null;
+  const parts = [
+    preset.providerId,
+    preset.model,
+    preset.reasoningLevel,
+    preset.permissionMode,
+  ].filter((p): p is string => typeof p === "string" && p.length > 0);
+  return parts.length > 0 ? `new-thread default: ${parts.join(" · ")}` : null;
+}
 
 /**
  * A project's thread list: live (re-fetched on `project:changed`), keyboard
@@ -25,12 +38,15 @@ export class ThreadListView implements View {
   constructor(
     private readonly sdk: BBSdk,
     private readonly project: { id: string; name: string },
+    private readonly preset: SpawnPreset | null = null,
   ) {}
 
   async mount(host: ViewHost): Promise<void> {
     this.host = host;
     const box = new BoxRenderable(host.renderer, { flexDirection: "column", padding: 1, gap: 1 });
     box.add(new TextRenderable(host.renderer, { content: `project: ${this.project.name}` }));
+    const summary = presetSummary(this.preset);
+    if (summary) box.add(new TextRenderable(host.renderer, { content: summary, fg: "#4EC9B0" }));
     this.body = new TextRenderable(host.renderer, { content: "loading…" });
     box.add(this.body);
     box.add(
@@ -72,8 +88,11 @@ export class ThreadListView implements View {
         this.open();
         break;
       case "n":
-        // The project already exists here, so resolving its id is immediate.
-        void this.host.navigator.push(new SpawnWizardView(this.sdk, async () => this.project));
+        // The project already exists here, so resolving its id is immediate. The
+        // shorthand preset (if any) pre-seeds the wizard.
+        void this.host.navigator.push(
+          new SpawnWizardView(this.sdk, async () => this.project, this.preset),
+        );
         break;
       case "p":
         void this.host.navigator.push(new SkillsView(this.sdk, this.project.id));

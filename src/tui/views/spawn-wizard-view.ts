@@ -4,6 +4,7 @@ import type { BBSdk } from "../../bb/sdk.ts";
 import { InputBuffer } from "../input-buffer.ts";
 import type { View, ViewHost } from "../navigator.ts";
 import {
+  applyPreset,
   buildSpawnParams,
   chooseMode,
   chooseModel,
@@ -12,6 +13,7 @@ import {
   initWizard,
   moveCursor,
   type PermissionMode,
+  type SpawnPreset,
   setModels,
   setPrompt,
   stepChoices,
@@ -21,6 +23,25 @@ import {
 } from "../spawn-wizard.ts";
 import { errorText } from "../util.ts";
 import { ThreadView } from "./thread-view.ts";
+
+/**
+ * Fast-forward a fresh wizard to the shorthand preset: fetch the preset provider's
+ * models, then `applyPreset`. A missing provider or a models-fetch failure leaves
+ * the wizard un-seeded (plain flow), reporting the failure via the returned error.
+ */
+async function seedWizardPreset(
+  sdk: BBSdk,
+  base: WizardState,
+  preset: SpawnPreset | null,
+): Promise<{ state: WizardState; error?: string }> {
+  if (!preset || !base.providers.some((p) => p.id === preset.providerId)) return { state: base };
+  try {
+    const models = toModelChoices(await listModels(sdk, preset.providerId));
+    return { state: applyPreset(base, models, preset) };
+  } catch (error) {
+    return { state: base, error: `error loading models: ${errorText(error)}` };
+  }
+}
 
 /**
  * The new-thread spawn wizard: provider → model → mode → prompt, then
@@ -45,6 +66,8 @@ export class SpawnWizardView implements View {
     // The project id is resolved lazily on submit so the wizard opening (and
     // cancelling) never creates a project — only actually spawning a thread does.
     private readonly resolveProjectId: () => Promise<{ id: string; name: string }>,
+    // New-thread defaults from the `vch <provider> …` shorthand, pre-seeded on mount.
+    private readonly preset: SpawnPreset | null = null,
   ) {}
 
   async mount(host: ViewHost): Promise<void> {
@@ -65,7 +88,9 @@ export class SpawnWizardView implements View {
 
     try {
       const providers = toProviderChoices(await listProviders(this.sdk));
-      this.state = initWizard(providers);
+      const seeded = await seedWizardPreset(this.sdk, initWizard(providers), this.preset);
+      this.state = seeded.state;
+      if (seeded.error && this.status) this.status.content = seeded.error;
       this.render();
     } catch (error) {
       if (this.body) this.body.content = `error loading providers: ${errorText(error)}`;
@@ -174,6 +199,7 @@ export class SpawnWizardView implements View {
     const summary = [
       state.provider ? `provider ${state.provider.label}` : null,
       state.model ? `model ${state.model.label}` : null,
+      state.reasoning ? `reasoning ${state.reasoning}` : null,
       state.mode ? `mode ${state.mode}` : null,
     ]
       .filter((s): s is string => s !== null)
