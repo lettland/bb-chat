@@ -1,9 +1,11 @@
-import { BoxRenderable, type KeyEvent, TextRenderable } from "@opentui/core";
+import { BoxRenderable, fg, type KeyEvent, StyledText, TextRenderable } from "@opentui/core";
 import { getDiffFiles } from "../../bb/environments.ts";
 import type { BBSdk } from "../../bb/sdk.ts";
 import { getThreadEnvironmentId } from "../../bb/threads.ts";
 import { renderDiffFiles } from "../diff-render.ts";
 import type { View, ViewHost } from "../navigator.ts";
+import { sanitizeText } from "../sanitize.ts";
+import { diffColor } from "../theme.ts";
 import { errorText } from "../util.ts";
 
 /** Most recent diff lines to keep rendered (until a scroll view lands). */
@@ -43,6 +45,9 @@ export class DiffView implements View {
       this.box.destroy();
       this.box = null;
     }
+    // Null the body too: an in-flight refresh guards on `this.body`, so clearing
+    // it prevents a write to the now-destroyed renderable if the user leaves mid-fetch.
+    this.body = null;
   }
 
   onKey(key: KeyEvent): void {
@@ -57,14 +62,21 @@ export class DiffView implements View {
     if (!this.body) return;
     try {
       const environmentId = await getThreadEnvironmentId(this.sdk, this.threadId);
+      if (!this.body) return; // left the view mid-fetch
       if (!environmentId) {
         this.body.content = "this thread has no environment to diff";
         return;
       }
-      const lines = renderDiffFiles(await getDiffFiles(this.sdk, environmentId)).map((l) => l.text);
-      this.body.content = lines.length > 0 ? lines.slice(0, DIFF_TAIL).join("\n") : "no changes";
+      const response = await getDiffFiles(this.sdk, environmentId);
+      if (!this.body) return; // left the view mid-fetch
+      const lines = renderDiffFiles(response).slice(0, DIFF_TAIL);
+      // renderDiffFiles never returns []; guard anyway so the pane can't blank out.
+      this.body.content =
+        lines.length > 0
+          ? new StyledText(lines.map((l) => fg(diffColor(l.tone))(`${sanitizeText(l.text)}\n`)))
+          : "no changes";
     } catch (error) {
-      this.body.content = `error loading diff: ${errorText(error)}`;
+      if (this.body) this.body.content = sanitizeText(`error loading diff: ${errorText(error)}`);
     }
   }
 }

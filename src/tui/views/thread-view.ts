@@ -1,29 +1,28 @@
-import {
-  BoxRenderable,
-  fg,
-  type KeyEvent,
-  ScrollBoxRenderable,
-  StyledText,
-  TextRenderable,
-} from "@opentui/core";
+import { BoxRenderable, type KeyEvent, ScrollBoxRenderable, TextRenderable } from "@opentui/core";
 import type { BBSdk } from "../../bb/sdk.ts";
 import { getTimelineRows, sendText, type Unsubscribe, watchThread } from "../../bb/threads.ts";
 import { InputBuffer } from "../input-buffer.ts";
 import type { View, ViewHost } from "../navigator.ts";
-import { renderTranscript, toneColor } from "../timeline-render.ts";
+import { sanitizeText } from "../sanitize.ts";
+import { toneColor } from "../theme.ts";
+import { type Block, buildBlocks, isTimelineActive, selectableIds } from "../timeline-model.ts";
 import { ToolSelection } from "../tool-selection.ts";
-import { helpLegend, styledTranscript } from "../transcript-style.ts";
+import { helpLegend } from "../transcript-style.ts";
 import { errorText, parseSlashCommand } from "../util.ts";
+import { type BlockOpts, type MountedBlock, reconcileBlocks } from "./blocks.ts";
 import { DiffView } from "./diff-view.ts";
 import { TerminalsView } from "./terminals-view.ts";
 
-const HEADER_FG = "#6A737D";
-const COMPOSER_BORDER = "#4EC9B0";
+const HEADER_FG = toneColor("system");
+const COMPOSER_BORDER = toneColor("user");
+/** Cap on output/patch lines shown when a row is expanded. */
+const MAX_OUTPUT_LINES = 200;
 
 interface ThreadLayout {
   outer: BoxRenderable;
   scrollbox: ScrollBoxRenderable;
-  body: TextRenderable;
+  /** The column that holds one renderable per timeline block. */
+  listBox: BoxRenderable;
   status: TextRenderable;
   composer: TextRenderable;
 }
@@ -44,11 +43,11 @@ function buildThreadLayout(renderer: ViewHost["renderer"], title: string): Threa
     stickyStart: "bottom",
     contentOptions: { flexDirection: "column", paddingLeft: 1, paddingRight: 1 },
   });
-  const body = new TextRenderable(renderer, { content: "" });
-  scrollbox.add(body);
+  const listBox = new BoxRenderable(renderer, { flexDirection: "column" });
+  scrollbox.add(listBox);
   outer.add(scrollbox);
 
-  const status = new TextRenderable(renderer, { content: "", fg: "#E5C07B" });
+  const status = new TextRenderable(renderer, { content: "", fg: toneColor("attention") });
   outer.add(status);
 
   const composerBox = new BoxRenderable(renderer, {
@@ -64,18 +63,19 @@ function buildThreadLayout(renderer: ViewHost["renderer"], title: string): Threa
   composerBox.add(composer);
   outer.add(composerBox);
 
-  return { outer, scrollbox, body, status, composer };
+  return { outer, scrollbox, listBox, status, composer };
 }
 
 /**
- * A single thread: a colored, per-role transcript in a scrollable region above a
- * bordered composer. The transcript is a real ScrollBox — it holds the FULL
- * thread, follows the latest (sticky bottom), and scrolls by mouse wheel, the
- * scrollbar, and PgUp/PgDn/↑/↓/Home/End. Each message gets a "▌ you" / "▌
- * assistant" gutter header; tool calls, edits, subagents, questions, and errors
- * are colored distinctly (toneColor) and indented under the assistant; a rule
- * separates exchanges. Tool output is a one-line preview by default — Tab/Shift+Tab
- * move a selection cursor across tool calls and Ctrl+E expands the selected one.
+ * A single thread: a per-role transcript in a scrollable region above a bordered
+ * composer. The transcript is a real ScrollBox holding one renderable per timeline
+ * block — assistant messages render as markdown cards (highlighted code fences),
+ * tool calls / edits / diffs as compact colored rows — reconciled in place across
+ * refreshes (see `blocks.ts`). It holds the FULL thread, follows the latest (sticky
+ * bottom), and scrolls by mouse wheel, the scrollbar, and PgUp/PgDn/↑/↓/Home/End.
+ * A new user turn opens a new exchange (a blank gap above its card). Tool/diff
+ * output is a one-line preview by default — Tab/Shift+Tab move a selection cursor
+ * across expandable rows and Ctrl+E expands the selected one.
  */
 export class ThreadView implements View {
   /** Composer inputs intercepted as commands; everything else (incl. "/paths") sends. */
@@ -93,7 +93,7 @@ export class ThreadView implements View {
   private host!: ViewHost;
   private box: BoxRenderable | null = null;
   private scrollbox: ScrollBoxRenderable | null = null;
-  private body: TextRenderable | null = null;
+  private listBox: BoxRenderable | null = null;
   private status: TextRenderable | null = null;
   private composer: TextRenderable | null = null;
   private readonly input = new InputBuffer();
@@ -103,7 +103,11 @@ export class ThreadView implements View {
   private refreshQueued = false;
   /** Tool-output selection/expansion state (cursor + expanded rows). */
   private readonly tools = new ToolSelection();
-  private totalLines = 0;
+  /** Mounted block renderables, keyed by block id, for in-place reconciliation. */
+  private mounted = new Map<string, MountedBlock>();
+  /** Bumped on every mount/unmount; an in-flight refresh from an older generation
+   *  discards its result rather than painting stale rows into a fresh mount. */
+  private generation = 0;
 
   constructor(
     private readonly sdk: BBSdk,
@@ -113,10 +117,11 @@ export class ThreadView implements View {
 
   async mount(host: ViewHost): Promise<void> {
     this.host = host;
+    this.generation += 1;
     const layout = buildThreadLayout(host.renderer, this.threadTitle);
     this.box = layout.outer;
     this.scrollbox = layout.scrollbox;
-    this.body = layout.body;
+    this.listBox = layout.listBox;
     this.status = layout.status;
     this.composer = layout.composer;
     host.renderer.root.add(layout.outer);
@@ -136,6 +141,14 @@ export class ThreadView implements View {
       this.box.destroy();
       this.box = null;
     }
+    // Renderables were destroyed with the box tree; drop the stale handles so a
+    // re-mount rebuilds from scratch. Bumping the generation and clearing the
+    // in-flight flags makes any pending refresh discard its (now stale) result.
+    this.mounted = new Map();
+    this.listBox = null;
+    this.generation += 1;
+    this.refreshing = false;
+    this.refreshQueued = false;
   }
 
   onKey(key: KeyEvent): void {
@@ -208,14 +221,10 @@ export class ThreadView implements View {
     }
   }
 
-  /** Best-effort: scroll so the selected tool's call line is in view. */
+  /** Scroll so the selected block is in view, by its renderable id. */
   private scrollToSelected(): void {
-    const scroll = this.scrollbox;
-    const line = this.tools.selectedLine();
-    if (!scroll || line === null || this.totalLines <= 1) return;
-    // Lines wrap, so map the logical line to a scroll offset proportionally.
-    const ratio = line / (this.totalLines - 1);
-    scroll.scrollTo(Math.max(0, Math.round(ratio * scroll.scrollHeight)));
+    const id = this.tools.selected;
+    if (this.scrollbox && id) this.scrollbox.scrollChildIntoView(id);
   }
 
   private runCommand(name: string): void {
@@ -267,7 +276,7 @@ export class ThreadView implements View {
       if (this.status) this.status.content = "";
       await this.refresh();
     } catch (error) {
-      if (this.status) this.status.content = `send failed: ${errorText(error)}`;
+      if (this.status) this.status.content = sanitizeText(`send failed: ${errorText(error)}`);
     } finally {
       this.sending = false;
     }
@@ -279,36 +288,45 @@ export class ThreadView implements View {
    * afterward, so fetches never overlap and bursts don't amplify.
    */
   private async refresh(): Promise<void> {
-    if (!this.body) return;
+    if (!this.listBox) return;
     if (this.refreshing) {
       this.refreshQueued = true;
       return;
     }
     this.refreshing = true;
+    // Capture the mount generation: if the view is unmounted/remounted while this
+    // fetch is in flight, discard the result rather than paint stale rows.
+    const generation = this.generation;
     try {
-      // Rules span the transcript width: terminal columns minus the ScrollBox's
-      // left/right padding and scrollbar gutter.
-      const ruleWidth = Math.max(8, (process.stdout.columns ?? 80) - 4);
       const rows = await getTimelineRows(this.sdk, this.threadId);
-      const transcript = renderTranscript(rows, {
-        ruleWidth,
-        expanded: this.tools.expanded,
-        selectedId: this.tools.selected,
-      });
-      this.totalLines = transcript.lines.length;
-      this.tools.sync(transcript.anchors);
-      this.body.content = styledTranscript(transcript.lines);
+      if (generation !== this.generation || !this.listBox) return;
+      const blocks = buildBlocks(rows, { streaming: isTimelineActive(rows) });
+      this.tools.sync(selectableIds(blocks));
+      this.renderBlocks(blocks);
       if (this.tools.selected) this.scrollToSelected();
     } catch (error) {
-      this.body.content = new StyledText([
-        fg(toneColor("attention"))(`error loading timeline: ${errorText(error)}\n`),
+      if (generation !== this.generation || !this.listBox) return;
+      this.renderBlocks([
+        { kind: "error", id: "error", text: `error loading timeline: ${errorText(error)}` },
       ]);
     } finally {
-      this.refreshing = false;
+      if (generation === this.generation) this.refreshing = false;
     }
-    if (this.refreshQueued && this.box) {
+    if (this.refreshQueued && this.listBox) {
       this.refreshQueued = false;
       void this.refresh();
     }
+  }
+
+  /** Reconcile the block column to `blocks`, reusing renderables by id. */
+  private renderBlocks(blocks: Block[]): void {
+    const listBox = this.listBox;
+    if (!listBox) return;
+    const optsFor = (block: Block): BlockOpts => ({
+      selected: block.id === this.tools.selected,
+      expanded: this.tools.expanded.has(block.id),
+      maxLines: MAX_OUTPUT_LINES,
+    });
+    this.mounted = reconcileBlocks(this.host.renderer, listBox, this.mounted, blocks, optsFor);
   }
 }

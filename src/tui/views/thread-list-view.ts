@@ -3,6 +3,7 @@ import type { BBSdk } from "../../bb/sdk.ts";
 import { listThreads, type Unsubscribe, watchProject } from "../../bb/threads.ts";
 import type { View, ViewHost } from "../navigator.ts";
 import type { SpawnPreset } from "../spawn-wizard.ts";
+import { accentColor } from "../theme.ts";
 import { formatThreadRow, renderThreadList, type ThreadRow } from "../thread-list-render.ts";
 import { clamp, errorText } from "../util.ts";
 import { SkillsView } from "./skills-view.ts";
@@ -46,7 +47,8 @@ export class ThreadListView implements View {
     const box = new BoxRenderable(host.renderer, { flexDirection: "column", padding: 1, gap: 1 });
     box.add(new TextRenderable(host.renderer, { content: `project: ${this.project.name}` }));
     const summary = presetSummary(this.preset);
-    if (summary) box.add(new TextRenderable(host.renderer, { content: summary, fg: "#4EC9B0" }));
+    if (summary)
+      box.add(new TextRenderable(host.renderer, { content: summary, fg: accentColor() }));
     this.body = new TextRenderable(host.renderer, { content: "loading…" });
     box.add(this.body);
     box.add(

@@ -1,14 +1,6 @@
 import { fg, StyledText } from "@opentui/core";
-import { type DisplayLine, type LineTone, toneColor } from "./timeline-render.ts";
-
-/** Render transcript display lines into a colored StyledText (one line per row). */
-export function styledTranscript(lines: DisplayLine[]): StyledText {
-  const rows: DisplayLine[] =
-    lines.length > 0 ? lines : [{ text: "(no messages yet)", tone: "meta" }];
-  return new StyledText(
-    rows.map((line) => fg(toneColor(line.tone))(`${line.text.length > 0 ? line.text : " "}\n`)),
-  );
-}
+import { toneColor } from "./theme.ts";
+import type { LineTone } from "./timeline-render.ts";
 
 /** A colored legend of the transcript's tones plus the expand keys, for the status line. */
 export function helpLegend(): StyledText {

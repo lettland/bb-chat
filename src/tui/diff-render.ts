@@ -22,7 +22,7 @@ function num(rec: Record<string, unknown>, key: string): number {
   return typeof value === "number" ? value : 0;
 }
 
-function changeGlyph(changeKind: string): string {
+export function changeGlyph(changeKind: string): string {
   switch (changeKind) {
     case "added":
       return "A";
@@ -41,7 +41,7 @@ function changeGlyph(changeKind: string): string {
   }
 }
 
-function patchLineTone(line: string): DiffTone {
+export function patchLineTone(line: string): DiffTone {
   if (line.startsWith("@@")) return "hunk";
   if (line.startsWith("+++") || line.startsWith("---")) return "meta";
   if (line.startsWith("diff ") || line.startsWith("index ")) return "meta";

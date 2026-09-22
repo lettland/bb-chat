@@ -5,6 +5,10 @@
  * Structural/defensive (D2).
  */
 
+import { sanitizeText, stripAnsi } from "./sanitize.ts";
+
+export { stripAnsi };
+
 export interface TerminalRow {
   id: string;
   title: string;
@@ -36,27 +40,6 @@ export function toTerminalRows(response: unknown): TerminalRow[] {
   return rows;
 }
 
-const ESC = String.fromCharCode(0x1b);
-const BEL = String.fromCharCode(0x07);
-
-// Built from char codes (not literal control chars in source, so Biome leaves it
-// alone and no ignore is needed). Alternations, in order:
-//   1. CSI:  ESC [ params intermediates final
-//   2. OSC:  ESC ] ... terminated by BEL or ST (ESC \)
-//   3. C1 two-char escapes: ESC + one final byte in @-Z \ ^ _
-//      (deliberately EXCLUDES [ and ], which start CSI/OSC — otherwise ESC]
-//      would match here and the OSC handler would never run, leaking the OSC
-//      payload into the output).
-const ANSI_PATTERN = new RegExp(
-  `${ESC}(?:\\[[0-?]*[ -/]*[@-~]|\\][^${BEL}]*(?:${BEL}|${ESC}\\\\)|[@-Z\\\\^_])`,
-  "g",
-);
-
-/** Strip ANSI escape sequences and carriage returns, leaving readable text. */
-export function stripAnsi(input: string): string {
-  return input.replace(ANSI_PATTERN, "").replace(/\r/g, "");
-}
-
 /** Decode a `terminals.output` response (base64 chunks) into stripped plain text. */
 export function decodeTerminalOutput(response: unknown): string {
   if (!response || typeof response !== "object") return "";
@@ -68,5 +51,7 @@ export function decodeTerminalOutput(response: unknown): string {
     const b64 = (chunk as { dataBase64?: unknown }).dataBase64;
     if (typeof b64 === "string") parts.push(Buffer.from(b64, "base64").toString("utf8"));
   }
-  return stripAnsi(parts.join(""));
+  // Full sanitize (not just stripAnsi): terminal output can contain unterminated
+  // OSC and residual control bytes that the ANSI pass alone would leave behind.
+  return sanitizeText(parts.join(""));
 }
