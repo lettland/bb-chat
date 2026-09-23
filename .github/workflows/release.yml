@@ -71,7 +71,7 @@ jobs:
           cd dist
           shasum -a 256 "${{ matrix.artifact }}" > "${{ matrix.artifact }}.sha256"
           cat "${{ matrix.artifact }}.sha256"
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: |
             dist/${{ matrix.artifact }}
