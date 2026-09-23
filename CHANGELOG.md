@@ -9,6 +9,12 @@ version it cuts on the next push to `master`.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-23
+
+### Changed
+
+- Upload test coverage to Coveralls from CI
+
 ## [0.1.0] - 2026-09-23
 
 ### Changed
@@ -54,5 +60,6 @@ ensure/health, project resolution, the global home, live thread list, streaming
 chat and composer, the spawn wizard, diff review, terminals, and plugin/skill
 listings.
 
-[Unreleased]: https://github.com/lettland/bb-chat/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/lettland/bb-chat/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/lettland/bb-chat/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/lettland/bb-chat/releases/tag/v0.1.0
