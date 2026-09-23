@@ -102,20 +102,8 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: bun install --frozen-lockfile
       # Publishes the source + bin wrapper, which run under Bun. Requires the
-      # NPM_TOKEN secret.
-      #
-      # --provenance signs an attestation of where the build came from, but npm
-      # only accepts it from a PUBLIC repository. Asking for it on a private repo
-      # fails the publish outright, so degrade to a plain publish with a warning
-      # rather than losing the release.
-      - name: Publish
+      # NPM_TOKEN secret; --provenance signs an attestation of where the build
+      # came from.
+      - run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          VISIBILITY: ${{ github.event.repository.visibility }}
-        run: |
-          if [ "$VISIBILITY" = "public" ]; then
-            npm publish --provenance --access public
-          else
-            echo "::warning::repository is $VISIBILITY — publishing without a provenance attestation"
-            npm publish --access public
-          fi
