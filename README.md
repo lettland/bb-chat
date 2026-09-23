@@ -1,6 +1,7 @@
 # bbchat
 
 [![ci](https://github.com/lettland/bb-chat/actions/workflows/ci.yml/badge.svg)](https://github.com/lettland/bb-chat/actions/workflows/ci.yml)
+[![Coverage Status](https://coveralls.io/repos/github/lettland/bb-chat/badge.svg?branch=master)](https://coveralls.io/github/lettland/bb-chat?branch=master)
 [![npm](https://img.shields.io/npm/v/bbchat.svg)](https://www.npmjs.com/package/bbchat)
 [![license](https://img.shields.io/badge/license-BSD--2--Clause-blue.svg)](LICENSE)
 

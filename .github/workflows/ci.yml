@@ -27,7 +27,17 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun run lint
-      - run: bun test
+      - run: bun run test:coverage
+      # Upload only; a Coveralls outage never gates a run. GITHUB_TOKEN identifies
+      # the repo to Coveralls — no repo token secret. CI runs on every push to the
+      # default branch as well, so master gets one report per commit from here.
+      - name: Upload coverage to Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: coverage/lcov.info
+          format: lcov
+          fail-on-error: false
 
   scripts:
     name: shellcheck

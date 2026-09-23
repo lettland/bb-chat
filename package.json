@@ -50,6 +50,7 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "test": "bun test",
+    "test:coverage": "bun test --coverage --coverage-reporter=text --coverage-reporter=lcov",
     "check": "bun run typecheck && bun run lint && bun test"
   },
   "dependencies": {

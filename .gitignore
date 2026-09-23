@@ -1,5 +1,6 @@
 node_modules/
 dist/
+coverage/
 *.log
 *.bun-build
 .DS_Store
