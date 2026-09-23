@@ -1,0 +1,82 @@
+name: build
+
+# The one definition of how a shippable binary is made. CI calls it on every push
+# and pull request, so each run leaves downloadable binaries behind; the release
+# workflow calls it with the version it is about to tag, so what gets attached to
+# a release is built exactly the way CI has been building it all along.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Stamp this version into package.json before building (empty = as checked out)"
+        type: string
+        default: ""
+      retention-days:
+        type: number
+        default: 14
+
+permissions:
+  contents: read
+
+jobs:
+  binary:
+    name: ${{ matrix.artifact }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: bbchat-linux-x64
+          - os: ubuntu-24.04-arm
+            artifact: bbchat-linux-arm64
+          # Intel macOS. GitHub retired the macos-13 runner; macos-15-intel is the
+          # current x64 image. macos-latest is arm64.
+          - os: macos-15-intel
+            artifact: bbchat-darwin-x64
+          - os: macos-latest
+            artifact: bbchat-darwin-arm64
+    runs-on: ${{ matrix.os }}
+    env:
+      ARTIFACT: ${{ matrix.artifact }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Stamp version
+        if: inputs.version != ''
+        run: bun scripts/release.ts set-version "$VERSION"
+        env:
+          VERSION: ${{ inputs.version }}
+      # OpenTUI ships platform-specific native code, so each binary is built on its
+      # own platform. The script names the output from uname; if that ever disagrees
+      # with the matrix label, the next step finds no file and fails.
+      - run: bun run build:binaries
+      # The transcript's highlighting relies on tree-sitter grammars that only
+      # `bun build --compile` embeds — `bun test` cannot see a broken embed.
+      - name: Selfcheck
+        run: ./dist/"$ARTIFACT" selfcheck
+      - name: Version matches package.json
+        run: |
+          got="$(./dist/"$ARTIFACT" version)"
+          want="$(bun --print 'require("./package.json").version')"
+          echo "binary=$got package.json=$want"
+          if [ "$got" != "$want" ]; then
+            echo "::error::$ARTIFACT reports $got, package.json says $want"
+            exit 1
+          fi
+      - name: Checksum
+        working-directory: dist
+        run: |
+          shasum -a 256 "$ARTIFACT" > "$ARTIFACT.sha256"
+          cat "$ARTIFACT.sha256"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            dist/${{ matrix.artifact }}
+            dist/${{ matrix.artifact }}.sha256
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention-days }}

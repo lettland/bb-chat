@@ -124,12 +124,14 @@ gitignored; a second lockfile resolves a different tree than CI's
 `bun install --frozen-lockfile`).
 
 Toolchain: Bun · TypeScript 7 · Biome · `@opentui/core` · `bb-app` SDK. CI runs
-typecheck + lint + tests and shellcheck, then compiles the standalone binary on
-Linux and macOS and runs `bbchat selfcheck` on each (proving the embedded
-tree-sitter grammars highlight with the network blocked — something `bun test`
-structurally cannot catch). Tagged releases verify the tag matches
-`package.json`, build per-platform binaries with checksums, run the same
-selfcheck on each, and publish to npm with provenance.
+typecheck + lint + tests and shellcheck, then builds the standalone binary for
+all four release platforms (Linux and macOS, x64 and arm64), runs
+`bbchat selfcheck` on each (proving the embedded tree-sitter grammars highlight
+with the network blocked — something `bun test` structurally cannot catch), and
+uploads them with checksums as run artifacts. Every push to `master` that changes
+shipped code is released automatically: version bump, changelog, tag, a GitHub
+release carrying those binaries, and an npm publish with provenance — see
+[Releasing](CONTRIBUTING.md#releasing).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for conventions and the release process,
 and [SECURITY.md](SECURITY.md) for the threat model — this client renders

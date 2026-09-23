@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "vch",
+      "name": "bbchat",
       "dependencies": {
         "@opentui/core": "0.5.11",
         "bb-app": "0.43.1",

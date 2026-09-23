@@ -6,9 +6,9 @@
  * renaming the tool is a one-line edit here followed by a list of failures that
  * is exactly the work remaining.
  *
- * Same reasoning for VERSION: `src/version.ts` documents itself as "kept in sync
- * with package.json" and nothing enforced that, so a release could ship a binary
- * whose `version` command disagreed with the package it came from.
+ * VERSION is read from package.json, which the release workflow stamps; these
+ * assertions guard against that import being replaced by a hand-kept constant
+ * again, which a release would silently leave stale.
  */
 
 import { describe, expect, test } from "bun:test";

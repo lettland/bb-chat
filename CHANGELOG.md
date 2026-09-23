@@ -4,11 +4,10 @@ All notable changes to this project are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+Add entries under `## [Unreleased]`; the release workflow moves them under the
+version it cuts on the next push to `master`.
 
 ## [Unreleased]
-
-Nothing has been tagged or published yet, so everything below is still pending
-the first release. Versioned sections start at `0.1.0`.
 
 ### Changed
 
@@ -26,15 +25,20 @@ the first release. Versioned sections start at `0.1.0`.
 
 ### Added
 
+- Automatic releases: every push to `master` that changes shipped code bumps the
+  version (`[minor]` / `[major]` commit markers, patch otherwise), cuts this
+  changelog, tags, attaches Linux and macOS (x64 + arm64) binaries with
+  checksums to a GitHub release, and publishes to npm when `NPM_TOKEN` is set.
+- CI builds and self-checks all four platform binaries on every push and pull
+  request and uploads them as run artifacts.
 - Project scaffold: `LICENSE` (BSD 2-Clause), `CONTRIBUTING.md`, `SECURITY.md`,
   `CODE_OF_CONDUCT.md`, `.editorconfig`, `.gitattributes`, issue and pull
-  request templates, `CODEOWNERS`, and Dependabot updates for npm and GitHub
-  Actions.
+  request templates, `CODEOWNERS`, and Dependabot updates for GitHub Actions.
 - `bun run check` — one command running typecheck, lint, and tests, matching the
   CI gate.
 - `test/naming.test.ts` — asserts the binary name, npm package name, config
   directory, and `BBCHAT_*` environment prefix stay consistent, and that
-  `src/version.ts` matches `package.json`.
+  `bbchat version` reports the `package.json` version.
 
 ### Fixed
 

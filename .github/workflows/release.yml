@@ -1,109 +1,193 @@
 name: release
 
+# Every push to master that changes shipped code cuts a release — no hand-made
+# tags. scripts/release.ts decides the version: the first release ships
+# package.json's version as-is; after that, a `[major]` or `[minor]` marker in any
+# commit subject since the last tag opts into that bump, and anything else cuts a
+# patch. A manual run can force a bump, including a `prerelease`.
+#
+# npm publishing needs the NPM_TOKEN secret. Without it the version commit, tag,
+# and GitHub release (with binaries) still happen; the release notes say npm was
+# skipped, and re-running the `npm` job once the secret exists publishes it.
+
 on:
   push:
-    tags: ["v*"]
+    branches: [master]
+    paths:
+      - "src/**"
+      - "bin/**"
+      - "package.json"
+      - "bun.lock"
+      - "scripts/**"
+      - ".github/workflows/release.yml"
+      - ".github/workflows/build.yml"
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: "auto = infer from commit markers, and release only if shipped code changed; anything else forces that bump"
+        type: choice
+        options: [auto, patch, minor, major, prerelease]
+        default: auto
 
-# A release is never worth racing against itself.
+# Releases are serial: each one bumps from the tag the previous one pushed.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  # Publishing a tag whose version disagrees with package.json produces a release
-  # nobody can reproduce. Fail before anything is built or uploaded.
-  verify:
-    name: verify tag matches package.json
+  plan:
+    name: plan
+    # The version commit is pushed with GITHUB_TOKEN, which never retriggers
+    # workflows; this guard is the second net should that ever be a PAT.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.head_commit.committer.name != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.plan.outputs.release }}
+      version: ${{ steps.plan.outputs.version }}
+      previous_tag: ${{ steps.plan.outputs.previous_tag }}
+      prerelease: ${{ steps.plan.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # tags and history since the last one
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - id: plan
+        run: bun scripts/release.ts plan
+        env:
+          FORCED_BUMP: ${{ inputs.release_type }}
+
+  check:
+    name: typecheck · lint · test
+    needs: plan
+    if: needs.plan.outputs.release == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      - name: Compare tag to package version
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          pkg="$(bun --print 'require("./package.json").version')"
-          echo "tag=$tag package.json=$pkg"
-          if [ "$tag" != "$pkg" ]; then
-            echo "::error::tag v$tag does not match package.json version $pkg"
-            exit 1
-          fi
       - run: bun install --frozen-lockfile
-      # The same gate as CI. A tag can be pushed to a commit CI never ran on.
       - run: bun run check
 
-  binaries:
-    name: ${{ matrix.artifact }}
-    needs: verify
+  build:
+    name: build
+    needs: plan
+    if: needs.plan.outputs.release == 'true'
+    uses: ./.github/workflows/build.yml
+    with:
+      version: ${{ needs.plan.outputs.version }}
+      retention-days: 7
+
+  github:
+    name: tag and GitHub release
+    # Nothing is pushed until every platform binary built and self-checked.
+    needs: [plan, check, build]
+    runs-on: ubuntu-latest
     permissions:
       contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            artifact: bbchat-linux-x64
-          - os: ubuntu-24.04-arm
-            artifact: bbchat-linux-arm64
-          # Intel macOS. GitHub retired the macos-13 runner; macos-15-intel is
-          # the current x64 image, and it is what produces a darwin-x64 binary —
-          # macos-latest is arm64 and would silently mislabel the artifact.
-          - os: macos-15-intel
-            artifact: bbchat-darwin-x64
-          - os: macos-latest
-            artifact: bbchat-darwin-arm64
-    runs-on: ${{ matrix.os }}
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      PREVIOUS_TAG: ${{ needs.plan.outputs.previous_tag }}
+      PRERELEASE: ${{ needs.plan.outputs.prerelease }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      - run: bun install --frozen-lockfile
-      - run: bun build ./src/index.ts --compile --outfile "dist/${{ matrix.artifact }}"
-      # Never publish a binary whose embedded grammars fail to highlight offline.
-      - run: "./dist/${{ matrix.artifact }} selfcheck"
-      - name: Checksum
+      - name: Commit and tag
         run: |
-          cd dist
-          shasum -a 256 "${{ matrix.artifact }}" > "${{ matrix.artifact }}.sha256"
-          cat "${{ matrix.artifact }}.sha256"
-      - uses: softprops/action-gh-release@v3
+          tag="v$VERSION"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            # A re-run after the push already landed: release what was tagged.
+            echo "$tag is already pushed; reusing it"
+            git fetch --quiet --force origin "refs/tags/$tag:refs/tags/$tag"
+            git checkout --quiet "$tag"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            bun scripts/release.ts cut "$VERSION" "${PREVIOUS_TAG:--}"
+            git add package.json CHANGELOG.md
+            git commit --quiet -m "release: $tag"
+            git tag -a "$tag" -m "bbchat $tag"
+            # The version commit and its tag land together or not at all. If master
+            # moved during this run the push is rejected, and the run queued behind
+            # this one releases the combined changes instead.
+            git push --atomic origin HEAD:master "refs/tags/$tag"
+          fi
+          bun scripts/release.ts notes "$VERSION" > "$RUNNER_TEMP/notes.md"
+      - uses: actions/download-artifact@v8
         with:
-          files: |
-            dist/${{ matrix.artifact }}
-            dist/${{ matrix.artifact }}.sha256
-          # Without this, a missing binary or checksum uploads nothing and still
-          # reports success — and the npm job, which only gates on job status,
-          # would publish alongside an incomplete release.
-          fail_on_unmatched_files: true
-          generate_release_notes: true
+          pattern: bbchat-*
+          path: dist
+          merge-multiple: true
+      - name: Create GitHub release
+        run: |
+          tag="v$VERSION"
+          ls -l dist
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "release $tag exists; re-uploading its assets"
+            gh release upload "$tag" dist/* --clobber
+            exit 0
+          fi
+          flags=()
+          if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
+          gh release create "$tag" dist/* --verify-tag \
+            --title "bbchat $tag" --notes-file "$RUNNER_TEMP/notes.md" "${flags[@]}"
 
   npm:
     name: publish to npm
-    # Only publish once every platform binary built and self-checked. A broken
-    # binary and a good npm package is the worst of both worlds.
-    needs: binaries
+    needs: [plan, github]
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write # annotate the GitHub release when publishing is skipped
       id-token: write # npm provenance attestation
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      PRERELEASE: ${{ needs.plan.outputs.prerelease }}
+      GH_TOKEN: ${{ github.token }}
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          ref: v${{ needs.plan.outputs.version }}
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
-      - run: bun install --frozen-lockfile
-      # Publishes the source + bin wrapper, which run under Bun. Requires the
-      # NPM_TOKEN secret; --provenance signs an attestation of where the build
-      # came from.
-      - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # Publishes the source + bin wrapper, which run under Bun; the compiled
+      # binaries live on the GitHub release.
+      - name: Publish
+        run: |
+          tag="v$VERSION"
+          marker="<!-- npm-skipped -->"
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::warning::NPM_TOKEN is not set: $tag is tagged and released on GitHub but not published to npm. Add the secret and re-run this job to publish it."
+            body="$(gh release view "$tag" --json body --jq .body)"
+            if [[ "$body" != *"$marker"* ]]; then
+              note="**Not published to npm** — the \`NPM_TOKEN\` secret was not configured for this run. Re-running the \`npm\` job of this release once it is set publishes this version."
+              printf '%s\n\n%s\n%s\n' "$body" "$marker" "$note" | gh release edit "$tag" --notes-file -
+            fi
+            exit 0
+          fi
+          if npm view "bbchat@$VERSION" version >/dev/null 2>&1; then
+            echo "bbchat@$VERSION is already on npm"
+          else
+            dist_tag=latest
+            if [ "$PRERELEASE" = "true" ]; then dist_tag=next; fi
+            npm publish --provenance --access public --tag "$dist_tag"
+          fi
+          # Drop the "not published" note a previous tokenless run left behind.
+          body="$(gh release view "$tag" --json body --jq .body)"
+          if [[ "$body" == *"$marker"* ]]; then
+            printf '%s\n' "${body%%"$marker"*}" | gh release edit "$tag" --notes-file -
+          fi

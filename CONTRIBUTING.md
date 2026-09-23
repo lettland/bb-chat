@@ -81,6 +81,8 @@ bun run build:binary && ./dist/bbchat selfcheck
 - Fill in the PR template — especially *how you verified it*. "Tests pass" is
   the floor; say what you actually exercised in the TUI.
 - Note user-visible changes in `CHANGELOG.md` under `## [Unreleased]`.
+- Put `[minor]` or `[major]` in the subject when the change warrants that
+  version bump; merging to `master` releases it (see [Releasing](#releasing)).
 
 ## Testing
 
@@ -93,14 +95,29 @@ than mocking a terminal.
 
 ## Releasing
 
-Maintainers only:
+There is no manual release step. Every push to `master` that changes shipped
+code (`src/`, `bin/`, `package.json`, `bun.lock`) cuts a release through
+[`.github/workflows/release.yml`](.github/workflows/release.yml):
 
-1. Bump `version` in `package.json` **and** `VERSION` in `src/version.ts`.
-   `test/naming.test.ts` fails if they drift.
-2. Move `## [Unreleased]` entries into a new dated version section in
-   `CHANGELOG.md`.
-3. Tag and push: `git tag v0.1.0 && git push origin v0.1.0`.
+1. **plan** — `scripts/release.ts plan` picks the version. The bump comes from
+   commit subjects since the last `v*` tag: a `[major]` or `[minor]` marker opts
+   into that bump (the highest across the range wins); anything else cuts a
+   patch. Docs- or CI-only pushes release nothing.
+2. **check** and **build** — the full `bun run check` gate, and all four
+   platform binaries built with the new version stamped in, each passing
+   `selfcheck` and a `version` check, with `.sha256` checksums.
+3. **tag and GitHub release** — moves the `## [Unreleased]` entries under the new
+   version in `CHANGELOG.md` (or lists the commit subjects if there were none),
+   commits `release: vX.Y.Z` as `github-actions[bot]`, tags it, and creates the
+   GitHub release with the binaries and that changelog section as notes.
+4. **npm** — publishes with provenance. Without the `NPM_TOKEN` secret this step
+   is skipped and the release notes say so; add the secret and re-run the `npm`
+   job of that release to publish it.
 
-The `release` workflow builds per-platform binaries, runs `selfcheck` on each,
-attaches them to the GitHub release, and publishes to npm (needs the `NPM_TOKEN`
-secret).
+So: note user-visible changes under `## [Unreleased]`, and put `[minor]` or
+`[major]` in the subject of a commit that warrants one. The version lives only in
+`package.json` — never edit it by hand, the workflow owns it.
+
+A manual run (**Actions → release → Run workflow**) can force `patch`, `minor`,
+`major`, or `prerelease` (`X.Y.Z-beta.N`, published to npm's `next` dist-tag),
+and releases even when nothing shipped changed.

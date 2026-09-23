@@ -38,23 +38,8 @@ jobs:
       # bug there fails on their machine, never in the test suite.
       - run: shellcheck scripts/*.sh
 
-  binary:
-    name: binary selfcheck (${{ matrix.os }})
-    # The transcript's markdown/code highlighting relies on tree-sitter grammars
-    # that only `bun build --compile` embeds — `bun test` cannot see a broken
-    # embed. Build the real binary and prove it still highlights offline, on both
-    # platforms, so it fails CI instead of shipping.
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - run: bun install --frozen-lockfile
-      - run: bun run build:binary
-      - run: ./dist/bbchat selfcheck
-      - run: ./dist/bbchat version
+  # All four release platforms, self-checked, uploaded as run artifacts — the
+  # same binaries a release would attach, downloadable from every run.
+  build:
+    name: build
+    uses: ./.github/workflows/build.yml
