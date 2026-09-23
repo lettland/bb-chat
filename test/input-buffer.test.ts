@@ -38,4 +38,11 @@ describe("InputBuffer", () => {
     expect(buf.handle({ name: "left" })).toEqual({ type: "none" });
     expect(buf.value).toBe("");
   });
+
+  test("clear empties the buffer", () => {
+    const buf = new InputBuffer();
+    buf.handle({ name: "x", sequence: "x" });
+    buf.clear();
+    expect(buf.value).toBe("");
+  });
 });

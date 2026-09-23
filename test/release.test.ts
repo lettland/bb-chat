@@ -83,6 +83,18 @@ describe("latestTag", () => {
   test("compareSemver orders numeric prerelease identifiers numerically", () => {
     expect(compareSemver("1.0.0-beta.2", "1.0.0-beta.10")).toBeLessThan(0);
   });
+
+  test("compareSemver follows the semver prerelease precedence rules", () => {
+    expect(compareSemver("1.0.0-beta.1", "1.0.0-beta.1")).toBe(0);
+    // A shorter identifier list ranks lower when the shared prefix is equal.
+    expect(compareSemver("1.0.0-beta", "1.0.0-beta.1")).toBeLessThan(0);
+    expect(compareSemver("1.0.0-beta.1", "1.0.0-beta")).toBeGreaterThan(0);
+    // Numeric identifiers rank below alphanumeric ones; alphanumerics sort lexically.
+    expect(compareSemver("1.0.0-1", "1.0.0-alpha")).toBeLessThan(0);
+    expect(compareSemver("1.0.0-alpha", "1.0.0-1")).toBeGreaterThan(0);
+    expect(compareSemver("1.0.0-alpha", "1.0.0-beta")).toBeLessThan(0);
+    expect(compareSemver("1.0.0-beta", "1.0.0-alpha")).toBeGreaterThan(0);
+  });
 });
 
 describe("plan", () => {
@@ -126,6 +138,15 @@ describe("plan", () => {
       forcedBump: "prerelease",
     });
     expect(result).toMatchObject({ release: true, version: "0.1.1-beta.0" });
+  });
+
+  test("a forced bump on the first release bumps package.json's version", () => {
+    expect(plan({ ...base, previousTag: null, changed: true, forcedBump: "minor" })).toEqual({
+      release: true,
+      version: "0.2.0",
+      bump: "minor",
+      previousTag: null,
+    });
   });
 });
 

@@ -280,7 +280,8 @@ export function releaseNotes(text: string, version: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// CLI — the impure shell around the functions above.
+// CLI — the impure shell around the functions above. `main` is exported so the
+// test can drive it against a throwaway git repo; it acts on the current directory.
 
 const git = (...args: string[]): string => execFileSync("git", args, { encoding: "utf8" }).trim();
 
@@ -325,7 +326,7 @@ function parseBump(raw: string | undefined): Bump | null {
   return value as Bump;
 }
 
-function main(argv: string[]): void {
+export function main(argv: string[]): void {
   const [command, ...args] = argv;
   switch (command) {
     case "plan": {

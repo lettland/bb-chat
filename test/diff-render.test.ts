@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type DiffLine, renderDiffFiles } from "../src/tui/diff-render.ts";
+import { changeGlyph, type DiffLine, renderDiffFiles } from "../src/tui/diff-render.ts";
 
 const text = (lines: DiffLine[]): string => lines.map((l) => l.text).join("\n");
 
@@ -52,5 +52,14 @@ describe("renderDiffFiles", () => {
       initialPatches: [{ path: "a.ts", patch: "+x", truncated: true }],
     });
     expect(text(lines)).toContain("patch truncated");
+  });
+});
+
+describe("changeGlyph", () => {
+  test("maps every git change kind, falling back to the initial or ?", () => {
+    const kinds = ["added", "deleted", "modified", "renamed", "copied", "type_changed"];
+    expect(kinds.map(changeGlyph)).toEqual(["A", "D", "M", "R", "C", "T"]);
+    expect(changeGlyph("unmerged")).toBe("U");
+    expect(changeGlyph("")).toBe("?");
   });
 });

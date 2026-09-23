@@ -104,4 +104,28 @@ describe("ensureServer", () => {
       expect((error as Error).message).toContain("did not become healthy");
     }
   });
+
+  test("the default launcher spawns the start command detached", async () => {
+    // `true` exits immediately; this pins that the real spawn path accepts an argv.
+    let probes = 0;
+    const result = await ensureServer(
+      baseConfig({ autoStart: true, startCommand: ["true"] }),
+      { pollIntervalMs: 1 },
+      {
+        delay: async () => {},
+        probe: async () => ({ ok: probes++ > 0, launchId: probes > 1 ? "L3" : null }),
+      },
+    );
+    expect(result).toEqual({ serverUrl: "http://bb", launchId: "L3", started: true });
+  });
+
+  test("the default launcher refuses an empty executable", async () => {
+    const error = await ensureServer(
+      baseConfig({ autoStart: true, startCommand: [""] }),
+      {},
+      { probe: async () => ({ ok: false, launchId: null }) },
+    ).catch((e: unknown) => e);
+    expect(isBbchatError(error)).toBe(true);
+    expect((error as Error).message).toContain("startCommand is empty");
+  });
 });

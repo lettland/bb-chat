@@ -29,35 +29,67 @@ interface StubOptions {
   threads?: unknown[];
   listError?: Error;
   metaError?: Error;
+  timelineRows?: () => unknown[];
+  timelineError?: Error;
+  /** Receives every message the view sends; set `sendError` to fail the send. */
+  sent?: string[];
+  sendError?: Error;
+  /** Receives the realtime callback so a test can simulate a server push. */
+  onSubscribe?: (callback: () => void) => void;
+  providersError?: Error;
+  modelsError?: Error;
+  spawnResult?: unknown;
+  spawnError?: Error;
+  terminals?: unknown[];
+  terminalsError?: Error;
+  outputError?: Error;
+  environmentId?: string | null;
+  diffError?: Error;
+  skillsError?: Error;
+  pluginsError?: Error;
 }
 
 /** A stub SDK covering the calls every view makes. */
 function fakeSdk(o: StubOptions = {}): BBSdk {
   const b64 = (s: string) => Buffer.from(s, "utf8").toString("base64");
+  const fail = (error: Error | undefined) => {
+    if (error) throw error;
+  };
   return {
     threads: {
       list: async () => {
-        if (o.listError) throw o.listError;
+        fail(o.listError);
         return o.threads ?? THREADS;
       },
-      timeline: async () => ({
-        rows: [
-          { kind: "conversation", role: "user", text: "hello", id: "m1" },
-          { kind: "conversation", role: "assistant", text: "**hi** there", id: "m2" },
-        ],
-        timelinePage: {},
-      }),
+      timeline: async () => {
+        fail(o.timelineError);
+        return {
+          rows: o.timelineRows?.() ?? [
+            { kind: "conversation", role: "user", text: "hello", id: "m1" },
+            { kind: "conversation", role: "assistant", text: "**hi** there", id: "m2" },
+          ],
+          timelinePage: {},
+        };
+      },
       get: async () => {
-        if (o.metaError) throw o.metaError;
+        fail(o.metaError);
         return {
           title: "Fix the flaky test",
           providerId: "claude-code",
           status: "idle",
-          environmentId: "env_1",
+          environmentId: o.environmentId === undefined ? "env_1" : o.environmentId,
           environmentBranchName: "fix/flaky",
         };
       },
-      send: async () => ({}),
+      send: async (args: { input: { text: string }[] }) => {
+        fail(o.sendError);
+        o.sent?.push(args.input[0]?.text ?? "");
+        return {};
+      },
+      spawn: async () => {
+        fail(o.spawnError);
+        return o.spawnResult ?? { threadId: "thr_new" };
+      },
     },
     projects: {
       list: async () => [
@@ -66,37 +98,68 @@ function fakeSdk(o: StubOptions = {}): BBSdk {
       ],
     },
     providers: {
-      list: async () => [{ id: "claude-code", name: "Claude Code" }, { id: "codex" }],
-      models: async () => ({ models: [{ id: "opus-5", displayName: "Opus 5" }] }),
+      list: async () => {
+        fail(o.providersError);
+        return [{ id: "claude-code", name: "Claude Code" }, { id: "codex" }];
+      },
+      models: async () => {
+        fail(o.modelsError);
+        return { models: [{ id: "opus-5", displayName: "Opus 5" }] };
+      },
     },
     skills: {
-      list: async () => ({
-        skills: [
-          { id: "s1", name: "tdd" },
-          { id: "s2", name: "debug" },
-        ],
-      }),
+      list: async () => {
+        fail(o.skillsError);
+        return {
+          skills: [
+            { id: "s1", name: "tdd" },
+            { id: "s2", name: "debug" },
+          ],
+        };
+      },
     },
     plugins: {
-      list: async () => ({
-        plugins: [
-          { id: "a", name: "advisor", enabled: true },
-          { id: "b", name: "bb-guide", enabled: false },
-        ],
-      }),
+      list: async () => {
+        fail(o.pluginsError);
+        return {
+          plugins: [
+            { id: "a", name: "advisor", enabled: true },
+            { id: "b", name: "bb-guide", enabled: false },
+          ],
+        };
+      },
     },
     terminals: {
-      list: async () => ({ sessions: [{ id: "t1", title: "dev server", status: "running" }] }),
-      output: async () => ({ chunks: [{ dataBase64: b64("listening on :3000\n") }] }),
+      list: async () => {
+        fail(o.terminalsError);
+        return {
+          sessions: o.terminals ?? [{ id: "t1", title: "dev server", status: "running" }],
+        };
+      },
+      output: async (args: { terminalId: string }) => {
+        fail(o.outputError);
+        if (args.terminalId === "t_quiet") return { chunks: [] };
+        return {
+          chunks: [
+            { dataBase64: b64(`${args.terminalId === "t2" ? "built" : "listening on :3000"}\n`) },
+          ],
+        };
+      },
     },
     environments: {
-      diffFiles: async () => ({
-        outcome: "available",
-        files: [{ path: "src/a.ts", changeKind: "modified", additions: 1, deletions: 1 }],
-        initialPatches: [{ path: "src/a.ts", patch: "@@ -1 +1 @@\n-old\n+new" }],
-      }),
+      diffFiles: async () => {
+        fail(o.diffError);
+        return {
+          outcome: "available",
+          files: [{ path: "src/a.ts", changeKind: "modified", additions: 1, deletions: 1 }],
+          initialPatches: [{ path: "src/a.ts", patch: "@@ -1 +1 @@\n-old\n+new" }],
+        };
+      },
     },
-    subscribe: () => () => {},
+    subscribe: (s: { callback: () => void }) => {
+      o.onSubscribe?.(s.callback);
+      return () => {};
+    },
   } as unknown as BBSdk;
 }
 
@@ -116,8 +179,14 @@ async function boot() {
   live.push(t);
   let exited = false;
   const navigator = new Navigator({ renderer: t.renderer, exit: () => (exited = true) });
-  const press = (name: string) =>
-    navigator.handleKey({ name, ctrl: false, shift: false, meta: false } as KeyEvent);
+  const press = (name: string, mods: Partial<Pick<KeyEvent, "ctrl" | "shift">> = {}) =>
+    navigator.handleKey({ name, ctrl: false, shift: false, meta: false, ...mods } as KeyEvent);
+  /** Type printable text into whatever composer has focus. */
+  const type = (text: string) => {
+    for (const ch of text) {
+      navigator.handleKey({ name: ch, sequence: ch, ctrl: false, meta: false } as KeyEvent);
+    }
+  };
   const frame = async () => {
     await t.renderOnce();
     await t.renderOnce();
@@ -128,7 +197,7 @@ async function boot() {
     await eventually(t, () => t.captureCharFrame().includes(text));
     return t.captureCharFrame();
   };
-  return { t, navigator, press, frame, shows, exited: () => exited };
+  return { t, navigator, press, type, frame, shows, exited: () => exited };
 }
 
 const project = { id: "prj_1", name: "bbchat" };
@@ -316,5 +385,353 @@ describe("MessageView", () => {
     await app.navigator.push(new MessageView("bbchat", ["No project in focus."]));
     const text = await app.shows("No project in focus.");
     expect(text).toContain("q or esc to go back");
+  });
+});
+
+describe("ThreadView interaction", () => {
+  const toolRows = () => [
+    { kind: "conversation", role: "user", text: "run it", id: "m1" },
+    {
+      kind: "work",
+      workKind: "command",
+      status: "success",
+      id: "w1",
+      command: "make test",
+      output: "first line\nsecond line\nthird line",
+    },
+  ];
+
+  test("typing edits the composer and enter sends the trimmed message", async () => {
+    const sent: string[] = [];
+    const app = await boot();
+    await app.navigator.push(new ThreadView(fakeSdk({ sent }), "thr_a", "thr_a"));
+    await app.shows("hello");
+    app.type("hix");
+    app.press("backspace");
+    await app.shows("❯ hi");
+    app.type("  ");
+    app.press("return");
+    await eventually(app.t, () => sent.length === 1);
+    expect(sent).toEqual(["hi"]);
+    expect(await app.frame()).not.toContain("❯ hi");
+  });
+
+  test("a leading-slash message that is not a command is sent as text", async () => {
+    const sent: string[] = [];
+    const app = await boot();
+    await app.navigator.push(new ThreadView(fakeSdk({ sent }), "thr_a", "thr_a"));
+    await app.shows("hello");
+    app.type("/tmp/x.log");
+    app.press("return");
+    await eventually(app.t, () => sent.length === 1);
+    expect(sent).toEqual(["/tmp/x.log"]);
+  });
+
+  test("a failed send surfaces in the status line", async () => {
+    const app = await boot();
+    const sdk = fakeSdk({ sendError: new Error("thread is archived") });
+    await app.navigator.push(new ThreadView(sdk, "thr_a", "thr_a"));
+    await app.shows("hello");
+    app.type("hi");
+    app.press("return");
+    await app.shows("send failed: thread is archived");
+  });
+
+  test("/help shows the tone legend; /diff and /terminals open their views", async () => {
+    const app = await boot();
+    await app.navigator.push(new ThreadView(fakeSdk(), "thr_a", "thr_a"));
+    await app.shows("hello");
+    app.type("/help");
+    app.press("return");
+    await app.shows("Ctrl+E expand");
+
+    app.type("/diff");
+    app.press("return");
+    await eventually(app.t, () => app.navigator.current?.title === "diff");
+    app.press("q");
+    await eventually(app.t, () => app.navigator.current?.title === "thread");
+    await app.shows("hello");
+
+    app.type("/term");
+    app.press("return");
+    await eventually(app.t, () => app.navigator.current?.title === "terminals");
+  });
+
+  test("/back pops and /exit quits", async () => {
+    const app = await boot();
+    await app.navigator.push(new MessageView("home", ["home screen"]));
+    await app.navigator.push(new ThreadView(fakeSdk(), "thr_a", "thr_a"));
+    await app.shows("hello");
+    app.type("/back");
+    app.press("return");
+    await eventually(app.t, () => app.navigator.current?.title === "home");
+
+    const solo = await boot();
+    await solo.navigator.push(new ThreadView(fakeSdk(), "thr_a", "thr_a"));
+    await solo.shows("hello");
+    solo.type("/exit");
+    solo.press("return");
+    expect(solo.exited()).toBe(true);
+  });
+
+  test("ctrl+o opens the diff, ctrl+t the terminals, esc goes back", async () => {
+    const app = await boot();
+    await app.navigator.push(new ThreadView(fakeSdk(), "thr_a", "thr_a"));
+    await app.shows("hello");
+    app.press("o", { ctrl: true });
+    await eventually(app.t, () => app.navigator.current?.title === "diff");
+    app.press("escape");
+    await eventually(app.t, () => app.navigator.current?.title === "thread");
+    app.press("t", { ctrl: true });
+    await eventually(app.t, () => app.navigator.current?.title === "terminals");
+    app.press("escape");
+    await eventually(app.t, () => app.navigator.current?.title === "thread");
+    app.press("escape");
+    await eventually(app.t, () => app.exited());
+  });
+
+  test("tab selects a tool row and ctrl+e expands its full output", async () => {
+    const app = await boot();
+    await app.navigator.push(new ThreadView(fakeSdk({ timelineRows: toolRows }), "thr_a", "thr_a"));
+    let text = await app.shows("$ make test");
+    expect(text).toContain("first line");
+    expect(text).not.toContain("third line"); // collapsed: a one-line preview
+
+    app.press("e", { ctrl: true }); // nothing selected yet
+    await app.shows("select a row with Tab");
+
+    app.press("tab");
+    app.press("e", { ctrl: true });
+    text = await app.shows("third line");
+    expect(text).toContain("second line");
+
+    app.press("tab", { shift: true });
+    app.press("e", { ctrl: true }); // collapse again
+    await eventually(app.t, () => !app.t.captureCharFrame().includes("third line"));
+  });
+
+  test("scroll keys are consumed by the transcript, not the composer", async () => {
+    const app = await boot();
+    await app.navigator.push(new ThreadView(fakeSdk({ timelineRows: toolRows }), "thr_a", "thr_a"));
+    await app.shows("$ make test");
+    for (const key of ["pageup", "pagedown", "up", "down", "home", "end"]) app.press(key);
+    const text = await app.frame();
+    expect(text).toContain("❯ ");
+    expect(text).not.toContain("❯ pageup");
+    expect(app.navigator.current?.title).toBe("thread");
+  });
+
+  test("a timeline failure renders an error row", async () => {
+    const app = await boot();
+    const sdk = fakeSdk({ timelineError: new Error("timeline gone") });
+    await app.navigator.push(new ThreadView(sdk, "thr_a", "thr_a"));
+    await app.shows("error loading timeline: timeline gone");
+  });
+
+  test("a realtime change refetches, and a burst coalesces into one extra fetch", async () => {
+    let push: () => void = () => {};
+    let fetches = 0;
+    let text = "hello";
+    const sdk = fakeSdk({
+      onSubscribe: (callback) => (push = callback),
+      timelineRows: () => {
+        fetches += 1;
+        return [{ kind: "conversation", role: "user", text, id: "m1" }];
+      },
+    });
+    const app = await boot();
+    await app.navigator.push(new ThreadView(sdk, "thr_a", "thr_a"));
+    await app.shows("hello");
+    const before = fetches;
+    text = "updated from the server";
+    push();
+    push(); // arrives mid-fetch: queued, not a parallel fetch
+    push();
+    await app.shows("updated from the server");
+    await eventually(app.t, () => fetches === before + 2);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(fetches).toBe(before + 2);
+  });
+});
+
+describe("TerminalsView interaction", () => {
+  const two = [
+    { id: "t1", title: "dev server", status: "running" },
+    { id: "t2", title: "build", status: "exited" },
+  ];
+
+  test("j/k switch sessions and load that session's output; r refreshes", async () => {
+    const app = await boot();
+    await app.navigator.push(new TerminalsView(fakeSdk({ terminals: two }), "thr_a"));
+    await app.shows("listening on :3000");
+    expect(await app.frame()).toContain("2 terminals");
+    app.press("j");
+    await app.shows("built");
+    app.press("k");
+    await app.shows("listening on :3000");
+    app.press("r");
+    await app.shows("2 terminals");
+    app.press("q");
+    await eventually(app.t, () => app.exited());
+  });
+
+  test("empty list, empty output, and fetch errors each render their copy", async () => {
+    const empty = await boot();
+    await empty.navigator.push(new TerminalsView(fakeSdk({ terminals: [] }), "thr_a"));
+    await empty.shows("no terminals for this thread");
+    empty.press("j"); // nothing to move to
+
+    const quiet = await boot();
+    const quietSdk = fakeSdk({ terminals: [{ id: "t_quiet", title: "idle", status: "running" }] });
+    await quiet.navigator.push(new TerminalsView(quietSdk, "thr_a"));
+    await quiet.shows("(no output)");
+
+    const broken = await boot();
+    const listError = new Error("no host");
+    await broken.navigator.push(new TerminalsView(fakeSdk({ terminalsError: listError }), "thr_a"));
+    await broken.shows("error loading terminals: no host");
+
+    const noOutput = await boot();
+    const outputError = new Error("pty closed");
+    await noOutput.navigator.push(new TerminalsView(fakeSdk({ outputError }), "thr_a"));
+    await noOutput.shows("error loading output: pty closed");
+  });
+});
+
+describe("SpawnWizardView interaction", () => {
+  const resolve = async () => project;
+
+  test("provider → model → mode → prompt spawns and replaces itself with the thread", async () => {
+    const app = await boot();
+    await app.navigator.push(new SpawnWizardView(fakeSdk(), resolve));
+    await app.shows("step 1/4 · provider");
+    app.press("j");
+    app.press("k");
+    app.press("return");
+    await app.shows("Opus 5");
+    app.press("return");
+    await app.shows("step 3/4 · mode");
+    app.press("down");
+    app.press("up");
+    app.press("return");
+    await app.shows("step 4/4 · prompt");
+    app.press("return"); // an empty prompt does not spawn
+    app.type("fix it");
+    await app.shows("❯ fix it");
+    app.press("return");
+    await eventually(app.t, () => app.navigator.current instanceof ThreadView);
+    expect(app.navigator.depth).toBe(1);
+  });
+
+  test("a full preset skips straight to the prompt step", async () => {
+    const app = await boot();
+    const preset = {
+      providerId: "claude-code",
+      model: "opus-5",
+      reasoningLevel: "high",
+      permissionMode: "auto" as const,
+    };
+    await app.navigator.push(new SpawnWizardView(fakeSdk(), resolve, preset));
+    const text = await app.shows("step 4/4 · prompt");
+    expect(text).toContain("high");
+  });
+
+  test("a preset whose models fail to load reports it and falls back to the plain flow", async () => {
+    const app = await boot();
+    const preset = {
+      providerId: "claude-code",
+      model: null,
+      reasoningLevel: null,
+      permissionMode: null,
+    };
+    const sdk = fakeSdk({ modelsError: new Error("models down") });
+    await app.navigator.push(new SpawnWizardView(sdk, resolve, preset));
+    await app.shows("error loading models: models down");
+    expect(await app.frame()).toContain("step 1/4 · provider");
+  });
+
+  test("provider, model, and spawn failures are reported in place", async () => {
+    const noProviders = await boot();
+    const providersError = new Error("providers down");
+    await noProviders.navigator.push(new SpawnWizardView(fakeSdk({ providersError }), resolve));
+    await noProviders.shows("error loading providers: providers down");
+
+    const noModels = await boot();
+    const modelsError = new Error("models down");
+    await noModels.navigator.push(new SpawnWizardView(fakeSdk({ modelsError }), resolve));
+    await noModels.shows("step 1/4 · provider");
+    noModels.press("return");
+    await noModels.shows("error loading models: models down");
+
+    for (const [opts, message] of [
+      [{ spawnResult: {} }, "spawn returned no thread id"],
+      [{ spawnError: new Error("quota") }, "spawn failed: quota"],
+    ] as const) {
+      const preset = {
+        providerId: "claude-code",
+        model: "opus-5",
+        reasoningLevel: null,
+        permissionMode: "auto" as const,
+      };
+      const app = await boot();
+      await app.navigator.push(new SpawnWizardView(fakeSdk(opts), resolve, preset));
+      await app.shows("step 4/4 · prompt");
+      app.type("go");
+      app.press("return");
+      await app.shows(message);
+      expect(app.navigator.current?.title).toBe("new thread");
+    }
+  });
+});
+
+describe("DiffView / SkillsView / PluginsView states", () => {
+  test("diff: no environment, a fetch error, refresh, and back", async () => {
+    const none = await boot();
+    await none.navigator.push(new DiffView(fakeSdk({ environmentId: null }), "thr_a"));
+    await none.shows("this thread has no environment to diff");
+
+    const broken = await boot();
+    await broken.navigator.push(new DiffView(fakeSdk({ diffError: new Error("git") }), "thr_a"));
+    await broken.shows("error loading diff: git");
+
+    const app = await boot();
+    await app.navigator.push(new DiffView(fakeSdk(), "thr_a"));
+    await app.shows("1 file changed");
+    for (const key of ["k", "down", "up", "pageup", "space", "end", "r"]) app.press(key);
+    await app.shows("+new");
+    app.press("escape");
+    await eventually(app.t, () => app.exited());
+  });
+
+  test("skills and plugins render fetch errors and refresh on r", async () => {
+    const skills = await boot();
+    const skillsError = new Error("skills down");
+    await skills.navigator.push(new SkillsView(fakeSdk({ skillsError }), "prj_1"));
+    await skills.shows("error loading skills: skills down");
+    skills.press("r");
+    skills.press("q");
+    await eventually(skills.t, () => skills.exited());
+
+    const plugins = await boot();
+    const pluginsError = new Error("plugins down");
+    await plugins.navigator.push(new PluginsView(fakeSdk({ pluginsError })));
+    await plugins.shows("error loading plugins: plugins down");
+
+    const ok = await boot();
+    await ok.navigator.push(new PluginsView(fakeSdk()));
+    await ok.shows("advisor");
+    for (const key of ["j", "down", "k", "up", "r"]) ok.press(key);
+    await ok.shows("2 installed · 1 enabled");
+    ok.press("escape");
+    await eventually(ok.t, () => ok.exited());
+  });
+
+  test("MessageView pops on q", async () => {
+    const app = await boot();
+    await app.navigator.push(new MessageView("bbchat", ["No project in focus."]));
+    await app.shows("No project in focus.");
+    app.press("x"); // ignored
+    app.press("q");
+    await eventually(app.t, () => app.exited());
   });
 });

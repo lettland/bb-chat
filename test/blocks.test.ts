@@ -220,4 +220,50 @@ describe("mountBlock / reconcileBlocks", () => {
     expect(after).toBe(before); // same instance across the streaming flip
     expect(after?.root).toBe(before?.root);
   });
+
+  test("user messages and system notes update in place when their text changes", async () => {
+    const rows = (user: string, note: string): unknown[] => [
+      { kind: "conversation", role: "user", text: user, id: "u1" },
+      { kind: "system", text: note, id: "s1" },
+    ];
+    await frameOf(buildBlocks(rows("first draft", "context compacted")));
+    const user = mounted.get("u1");
+    const note = mounted.get("s1");
+    const frame = await frameOf(buildBlocks(rows("second draft", "turn cancelled")));
+    expect(frame).toContain("second draft");
+    expect(frame).toContain("turn cancelled");
+    expect(frame).not.toContain("first draft");
+    expect(mounted.get("u1")).toBe(user);
+    expect(mounted.get("s1")).toBe(note);
+  });
+
+  test("expanded output past maxLines is capped with a count of the hidden lines", async () => {
+    const rows: unknown[] = [
+      {
+        kind: "work",
+        workKind: "command",
+        status: "success",
+        id: "w1",
+        command: "seq 3",
+        output: "1\n2\n3",
+      },
+      {
+        kind: "work",
+        workKind: "file-change",
+        callId: "d1",
+        change: {
+          path: "src/a.ts",
+          kind: "modified",
+          movePath: null,
+          diff: "@@ -1 +1 @@\n-old\n+new",
+          diffStats: { added: 1, removed: 1 },
+        },
+      },
+    ];
+    const expandAll = (_b: Block): BlockOpts => ({ selected: false, expanded: true, maxLines: 1 });
+    const frame = await frameOf(buildBlocks(rows), expandAll);
+    // Both the command output and the patch show 1 of 3 lines.
+    expect(frame.match(/… \+2 more lines/g)).toHaveLength(2);
+    expect(frame).not.toContain("+new");
+  });
 });

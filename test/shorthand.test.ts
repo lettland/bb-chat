@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { matchModel, matchProvider, resolveOptions } from "../src/cli/shorthand.ts";
+import type { BBSdk } from "../src/bb/sdk.ts";
+import {
+  matchModel,
+  matchProvider,
+  resolveOptions,
+  resolveSpawnShorthand,
+} from "../src/cli/shorthand.ts";
+import { isBbchatError } from "../src/errors.ts";
 import type { Choice } from "../src/tui/spawn-wizard.ts";
 
 const providers: Choice[] = [
@@ -138,5 +145,54 @@ describe("resolveOptions", () => {
       expect(m.error).toContain("high");
       expect(m.error).toContain("auto");
     }
+  });
+});
+
+describe("resolveSpawnShorthand", () => {
+  const sdk = (o: { providersError?: boolean; modelsError?: boolean } = {}) =>
+    ({
+      providers: {
+        list: async () => {
+          if (o.providersError) throw new Error("down");
+          return [
+            { id: "codex", name: "Codex" },
+            { id: "claude-code", name: "Claude Code" },
+          ];
+        },
+        models: async () => {
+          if (o.modelsError) throw new Error("down");
+          return { models: [{ id: "claude-opus-5" }, { id: "claude-sonnet-5" }] };
+        },
+      },
+    }) as unknown as BBSdk;
+
+  test("no tokens: no preset", async () => {
+    expect(await resolveSpawnShorthand(sdk(), [])).toBeNull();
+  });
+
+  test("resolves provider, model, reasoning and mode against the live lists", async () => {
+    expect(await resolveSpawnShorthand(sdk(), ["claude", "opus", "high", "auto"])).toEqual({
+      providerId: "claude-code",
+      model: "claude-opus-5",
+      reasoningLevel: "high",
+      permissionMode: "auto",
+    });
+  });
+
+  test("a bad provider or option token throws with the choices", async () => {
+    const badProvider = await resolveSpawnShorthand(sdk(), ["nope"]).catch((e: unknown) => e);
+    expect(isBbchatError(badProvider)).toBe(true);
+    expect((badProvider as Error).message).toContain("unknown provider");
+
+    const badModel = await resolveSpawnShorthand(sdk(), ["claude", "haiku"]).catch(
+      (e: unknown) => e,
+    );
+    expect(isBbchatError(badModel)).toBe(true);
+    expect((badModel as Error).message).toContain("unknown model");
+  });
+
+  test("a transport failure falls back to null instead of throwing", async () => {
+    expect(await resolveSpawnShorthand(sdk({ providersError: true }), ["claude"])).toBeNull();
+    expect(await resolveSpawnShorthand(sdk({ modelsError: true }), ["claude"])).toBeNull();
   });
 });

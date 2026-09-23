@@ -1,4 +1,4 @@
-import { candidateServerUrls, detect, detectionToConfig } from "../bb/detect.ts";
+import { candidateServerUrls, type Detection, detect, detectionToConfig } from "../bb/detect.ts";
 import { createSdk } from "../bb/sdk.ts";
 import { configPath, parseCommand, writeConfigFile } from "../config.ts";
 import type { BbchatConfig } from "../types.ts";
@@ -63,6 +63,19 @@ async function serverInfo(serverUrl: string): Promise<string | null> {
   }
 }
 
+/** Side-effecting collaborators, injectable so `runInit` is testable without a live BB. */
+export interface InitDeps {
+  detect: (candidateUrls: readonly string[]) => Promise<Detection>;
+  serverInfo: (serverUrl: string) => Promise<string | null>;
+  isTTY: () => boolean;
+}
+
+const defaultInitDeps: InitDeps = {
+  detect: (candidateUrls) => detect(candidateUrls),
+  serverInfo,
+  isTTY: () => Boolean(process.stdin.isTTY),
+};
+
 /**
  * Explain the command fields. BB does not expose its own launch command over the
  * API, and an npm/desktop install has no `bb-app` CLI on PATH — so empty
@@ -87,9 +100,11 @@ export async function runInit(
   options: InitOptions,
   env: NodeJS.ProcessEnv = process.env,
   prompter: InitPrompter = bunPrompter,
+  deps: Partial<InitDeps> = {},
 ): Promise<number> {
+  const d = { ...defaultInitDeps, ...deps };
   const candidates = candidateServerUrls(env);
-  const detection = await detect(candidates);
+  const detection = await d.detect(candidates);
   let config = detectionToConfig(detection, candidates[0]);
 
   // An explicitly-requested URL wins over whatever stray server answered detection.
@@ -104,8 +119,8 @@ export async function runInit(
     return 0;
   }
 
-  const info = reachable ? await serverInfo(config.serverUrl) : null;
-  const interactive = !options.yes && Boolean(process.stdin.isTTY);
+  const info = reachable ? await d.serverInfo(config.serverUrl) : null;
+  const interactive = !options.yes && d.isTTY();
   const exists = await Bun.file(path).exists();
 
   if (interactive) {

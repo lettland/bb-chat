@@ -1,11 +1,17 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   configPath,
   defaultConfig,
   envOverrides,
+  loadConfigFile,
   mergeConfig,
   normalizeConfig,
   parseCommand,
+  resolveConfig,
+  writeConfigFile,
 } from "../src/config.ts";
 
 describe("parseCommand", () => {
@@ -93,5 +99,47 @@ describe("configPath", () => {
 
   test("falls back to ~/.config", () => {
     expect(configPath({ HOME: "/home/u" })).toContain("/.config/bbchat/config.json");
+  });
+});
+
+describe("config file I/O", () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+  const tempEnv = (extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => {
+    const dir = mkdtempSync(join(tmpdir(), "bbchat-config-"));
+    dirs.push(dir);
+    return { XDG_CONFIG_HOME: dir, ...extra };
+  };
+
+  test("a missing file loads as empty", async () => {
+    expect(await loadConfigFile(configPath(tempEnv()))).toEqual({});
+  });
+
+  test("an unparseable file loads as empty", async () => {
+    const env = tempEnv();
+    await Bun.write(configPath(env), "{ not json");
+    expect(await loadConfigFile(configPath(env))).toEqual({});
+  });
+
+  test("writeConfigFile round-trips through resolveConfig", async () => {
+    const env = tempEnv();
+    const config = { ...defaultConfig(), serverUrl: "http://file:1", autoStart: true };
+    expect(await writeConfigFile(config, env)).toBe(configPath(env));
+    expect(await resolveConfig(env)).toEqual(config);
+  });
+
+  test("environment overrides win over the file", async () => {
+    const env = tempEnv({
+      BBCHAT_SERVER_URL: "http://env:2",
+      BBCHAT_BB_COMMAND: '["/opt/bb"]',
+      BBCHAT_AUTO_START: "off",
+    });
+    await writeConfigFile({ ...defaultConfig(), serverUrl: "http://file:1", autoStart: true }, env);
+    const resolved = await resolveConfig(env);
+    expect(resolved.serverUrl).toBe("http://env:2");
+    expect(resolved.bbCommand).toEqual(["/opt/bb"]);
+    expect(resolved.autoStart).toBe(false);
   });
 });
