@@ -1,5 +1,5 @@
 import { basename, resolve } from "node:path";
-import { VchError } from "../errors.ts";
+import { BbchatError } from "../errors.ts";
 import type { BBSdk } from "./sdk.ts";
 
 /** Structural subset of a BB project we rely on (decoupled from exact SDK type names). */
@@ -62,7 +62,7 @@ export interface ProjectMatch {
 /**
  * Find the BB project registered for a working directory by its local-path
  * source. Returns null when none exists — never creates one, so merely opening
- * `vch` in a directory has no side effect.
+ * `bbchat` in a directory has no side effect.
  */
 export async function findProject(
   sdk: BBSdk,
@@ -91,7 +91,7 @@ export async function ensureProject(
   const hosts = (await sdk.hosts.list()) as HostLike[];
   const host = pickLocalHost(hosts);
   if (!host) {
-    throw new VchError(
+    throw new BbchatError(
       "No BB host is available to create a project on.",
       "Ensure the BB host daemon is running, then retry.",
     );

@@ -58,7 +58,7 @@ export interface SpawnParams {
   prompt: string;
 }
 
-/** Pre-selected new-thread options resolved from the `vch <provider> …` shorthand. */
+/** Pre-selected new-thread options resolved from the `bbchat <provider> …` shorthand. */
 export interface SpawnPreset {
   providerId: string;
   model: string | null;

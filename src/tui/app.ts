@@ -20,18 +20,18 @@ export interface ChatContext {
   initialThreadId: string | null;
   /**
    * When set, open the spawn wizard directly for this working directory. The
-   * project is created lazily on submit (so `vch new` that opens and cancels the
+   * project is created lazily on submit (so `bbchat new` that opens and cancels the
    * wizard doesn't register a project).
    */
   newThreadCwd: string | null;
-  /** New-thread defaults resolved from the `vch <provider> …` shorthand, if any. */
+  /** New-thread defaults resolved from the `bbchat <provider> …` shorthand, if any. */
   spawnPreset: SpawnPreset | null;
 }
 
 /**
  * Launch the interactive TUI: build the OpenTUI renderer, wire global key routing
  * into the navigator, and push the initial view (thread → thread list → global
- * home, depending on how `vch` was invoked). OpenTUI is imported lazily so the
+ * home, depending on how `bbchat` was invoked). OpenTUI is imported lazily so the
  * native renderer only loads on the interactive path.
  */
 export async function runChat(ctx: ChatContext): Promise<void> {
@@ -41,7 +41,7 @@ export async function runChat(ctx: ChatContext): Promise<void> {
   // mouse-wheel scrolling in the transcript's ScrollBox.
   const renderer = await createCliRenderer({ exitOnCtrlC: false, useMouse: true });
   // Pick the palette once, before any view mounts (views resolve colors when built).
-  setThemeMode(await resolveThemeMode(renderer, process.env.VCH_THEME));
+  setThemeMode(await resolveThemeMode(renderer, process.env.BBCHAT_THEME));
 
   // Single, reliable termination path. Destroying the renderer restores the
   // terminal; process.exit then forces a clean quit — the realtime WebSocket and
@@ -86,7 +86,7 @@ export async function runChat(ctx: ChatContext): Promise<void> {
   } else if (ctx.project) {
     await navigator.push(new ThreadListView(ctx.sdk, ctx.project, ctx.spawnPreset));
   } else {
-    await navigator.push(new MessageView("vch", ["No project in focus."]));
+    await navigator.push(new MessageView("bbchat", ["No project in focus."]));
   }
 
   // Stay alive until a shutdown path calls process.exit (quit / Ctrl-C / last pop).

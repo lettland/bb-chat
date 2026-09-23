@@ -1,11 +1,11 @@
-import { VchError } from "../errors.ts";
-import type { HealthStatus, VchConfig } from "../types.ts";
+import { BbchatError } from "../errors.ts";
+import type { BbchatConfig, HealthStatus } from "../types.ts";
 import { probeHealth } from "./health.ts";
 
 export interface EnsureServerResult {
   serverUrl: string;
   launchId: string | null;
-  /** Whether `vch` launched BB this call (vs. finding it already running). */
+  /** Whether `bbchat` launched BB this call (vs. finding it already running). */
   started: boolean;
 }
 
@@ -23,10 +23,10 @@ export interface EnsureServerOptions {
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-/** Spawn a detached background process from an argv array; never blocks `vch`. */
+/** Spawn a detached background process from an argv array; never blocks `bbchat`. */
 function launchDetached(command: string[]): void {
   const [exe, ...args] = command;
-  if (!exe) throw new VchError("startCommand is empty.");
+  if (!exe) throw new BbchatError("startCommand is empty.");
   const proc = Bun.spawn([exe, ...args], {
     stdin: "ignore",
     stdout: "ignore",
@@ -53,7 +53,7 @@ const defaultDeps: EnsureServerDeps = {
  *  4. If down with no `startCommand`, fail — no silent fallback to a discovered binary.
  */
 export async function ensureServer(
-  config: VchConfig,
+  config: BbchatConfig,
   options: EnsureServerOptions = {},
   deps: Partial<EnsureServerDeps> = {},
 ): Promise<EnsureServerResult> {
@@ -67,15 +67,15 @@ export async function ensureServer(
   }
 
   if (!config.autoStart) {
-    throw new VchError(
+    throw new BbchatError(
       `BB is not reachable at ${config.serverUrl}.`,
-      "Start BB yourself, set VCH_SERVER_URL, or run 'vch init' to configure autoStart and startCommand.",
+      "Start BB yourself, set BBCHAT_SERVER_URL, or run 'bbchat init' to configure autoStart and startCommand.",
     );
   }
   if (!config.startCommand || config.startCommand.length === 0) {
-    throw new VchError(
+    throw new BbchatError(
       "autoStart is enabled but no startCommand is configured.",
-      "Run 'vch init' to detect a launch command, or set VCH_START_COMMAND.",
+      "Run 'bbchat init' to detect a launch command, or set BBCHAT_START_COMMAND.",
     );
   }
 
@@ -90,8 +90,8 @@ export async function ensureServer(
     }
   }
 
-  throw new VchError(
+  throw new BbchatError(
     `BB did not become healthy at ${config.serverUrl} within ${Math.round(readyTimeoutMs / 1000)}s.`,
-    "Check the startCommand, or start BB manually and re-run 'vch'.",
+    "Check the startCommand, or start BB manually and re-run 'bbchat'.",
   );
 }

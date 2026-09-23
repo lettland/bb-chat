@@ -1,8 +1,8 @@
 import { DEFAULT_SERVER_URL } from "../config.ts";
-import type { HealthStatus, VchConfig } from "../types.ts";
+import type { BbchatConfig, HealthStatus } from "../types.ts";
 import { probeHealth } from "./health.ts";
 
-/** What `vch init` discovered about a system-local BB install. */
+/** What `bbchat init` discovered about a system-local BB install. */
 export interface Detection {
   /** A reachable server URL, if one answered `/health`. */
   runningServerUrl: string | null;
@@ -24,7 +24,7 @@ const defaultDeps: DetectDeps = {
 
 /**
  * Detect a system-local BB. Never launches anything and never mutates state —
- * it only probes a candidate URL and looks for executables on PATH. `vch init`
+ * it only probes a candidate URL and looks for executables on PATH. `bbchat init`
  * turns the result into an editable config; the user stays in control.
  */
 export async function detect(
@@ -52,7 +52,7 @@ export async function detect(
 /** Candidate server URLs to probe: env-provided first, then the default. */
 export function candidateServerUrls(env: NodeJS.ProcessEnv = process.env): string[] {
   const urls: string[] = [];
-  const envUrl = env.VCH_SERVER_URL?.trim() || env.BB_SERVER_URL?.trim();
+  const envUrl = env.BBCHAT_SERVER_URL?.trim() || env.BB_SERVER_URL?.trim();
   if (envUrl) urls.push(envUrl);
   if (!urls.includes(DEFAULT_SERVER_URL)) urls.push(DEFAULT_SERVER_URL);
   return urls;
@@ -66,7 +66,7 @@ export function candidateServerUrls(env: NodeJS.ProcessEnv = process.env): strin
 export function detectionToConfig(
   detection: Detection,
   fallbackServerUrl: string = DEFAULT_SERVER_URL,
-): VchConfig {
+): BbchatConfig {
   const bbCommand = detection.bbAppPath
     ? [detection.bbAppPath]
     : detection.bbPath

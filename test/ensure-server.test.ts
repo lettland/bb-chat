@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { ensureServer } from "../src/bb/ensure-server.ts";
-import { isVchError } from "../src/errors.ts";
-import type { VchConfig } from "../src/types.ts";
+import { isBbchatError } from "../src/errors.ts";
+import type { BbchatConfig } from "../src/types.ts";
 
-const baseConfig = (overrides: Partial<VchConfig> = {}): VchConfig => ({
+const baseConfig = (overrides: Partial<BbchatConfig> = {}): BbchatConfig => ({
   serverUrl: "http://bb",
   bbCommand: null,
   startCommand: null,
@@ -39,7 +39,7 @@ describe("ensureServer", () => {
       );
       throw new Error("expected throw");
     } catch (error) {
-      expect(isVchError(error)).toBe(true);
+      expect(isBbchatError(error)).toBe(true);
       expect((error as Error).message).toContain("not reachable");
     }
   });
@@ -56,7 +56,7 @@ describe("ensureServer", () => {
       );
       throw new Error("expected throw");
     } catch (error) {
-      expect(isVchError(error)).toBe(true);
+      expect(isBbchatError(error)).toBe(true);
       expect((error as Error).message).toContain("no startCommand");
     }
   });
@@ -100,7 +100,7 @@ describe("ensureServer", () => {
       );
       throw new Error("expected throw");
     } catch (error) {
-      expect(isVchError(error)).toBe(true);
+      expect(isBbchatError(error)).toBe(true);
       expect((error as Error).message).toContain("did not become healthy");
     }
   });

@@ -1,7 +1,7 @@
 /**
  * Terminal-safety sanitizers for untrusted content (tool output, repo diffs, LLM
  * prose). Escape sequences in that content can spoof the title bar, write the
- * clipboard (OSC 52), or move the cursor — so anything from outside vch is
+ * clipboard (OSC 52), or move the cursor — so anything from outside bbchat is
  * scrubbed before it reaches a renderable. Single source of truth so the diff,
  * markdown, and terminal paths all strip the same way.
  */

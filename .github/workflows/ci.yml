@@ -2,11 +2,22 @@ name: ci
 
 on:
   push:
-    branches: [main, master]
+    branches: [master, main]
   pull_request:
+  workflow_dispatch:
+
+# A force-push should cancel the run it superseded; a push to the default branch
+# should not cancel a run that may become a release baseline.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
   check:
+    name: typecheck · lint · test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,8 +28,33 @@ jobs:
       - run: bun run typecheck
       - run: bun run lint
       - run: bun test
-      # The transcript's markdown/code highlighting relies on tree-sitter grammars
-      # that `bun build --compile` embeds. Build the real binary and prove it still
-      # highlights offline, so a broken embed fails CI instead of shipping.
+
+  scripts:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The install/build scripts are the first thing a new user runs; a quoting
+      # bug there fails on their machine, never in the test suite.
+      - run: shellcheck scripts/*.sh
+
+  binary:
+    name: binary selfcheck (${{ matrix.os }})
+    # The transcript's markdown/code highlighting relies on tree-sitter grammars
+    # that only `bun build --compile` embeds — `bun test` cannot see a broken
+    # embed. Build the real binary and prove it still highlights offline, on both
+    # platforms, so it fails CI instead of shipping.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
       - run: bun run build:binary
-      - run: ./dist/vch selfcheck
+      - run: ./dist/bbchat selfcheck
+      - run: ./dist/bbchat version

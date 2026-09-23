@@ -1,6 +1,6 @@
 /**
  * Shared screen chrome so every view looks like one app: a themed header bar
- * (optionally under a small "vch" wordmark), a content area, a transient status
+ * (optionally under a small "bbchat" wordmark), a content area, a transient status
  * line, and a bottom status bar that fits itself to the terminal width. Plus
  * `ListPanel`, the selectable list used by every list screen.
  *
@@ -46,7 +46,7 @@ export interface ScreenOptions {
    * first — the least important are dropped first on narrow terminals.
    */
   hints: string;
-  /** Show the small "vch" wordmark above the header (home/list screens only). */
+  /** Show the small "bbchat" wordmark above the header (home/list screens only). */
   wordmark?: boolean;
 }
 
@@ -70,7 +70,9 @@ export class Screen {
 
     if (opts.wordmark) {
       const mark = new BoxRenderable(renderer, { paddingLeft: 1, paddingTop: 1, flexShrink: 0 });
-      mark.add(new ASCIIFontRenderable(renderer, { text: "vch", font: "tiny", color: p.accent }));
+      mark.add(
+        new ASCIIFontRenderable(renderer, { text: "bbchat", font: "tiny", color: p.accent }),
+      );
       this.outer.add(mark);
     }
 

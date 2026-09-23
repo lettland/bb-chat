@@ -1,5 +1,5 @@
 /**
- * `vch selfcheck` — verify the rendering stack works in THIS build, offline.
+ * `bbchat selfcheck` — verify the rendering stack works in THIS build, offline.
  *
  * The reskinned transcript highlights markdown and code with tree-sitter grammars
  * that `bun build --compile` embeds into the binary. If a future dependency or

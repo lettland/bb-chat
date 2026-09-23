@@ -26,7 +26,7 @@ function permissionModeArg(mode: PermissionMode | null): { permissionMode?: Perm
  * providerId and model are omitted when null: BB resolves them server-side
  * (verified in bb's thread-default-policy resolveCreateThreadExecutionDefaults —
  * requested ?? project stored default ?? first available provider; it errors only
- * when no provider exists at all). So `vch new "prompt"` with no flags is valid.
+ * when no provider exists at all). So `bbchat new "prompt"` with no flags is valid.
  */
 export async function spawnThread(sdk: BBSdk, params: SpawnParams): Promise<string | null> {
   const response = await sdk.threads.spawn({

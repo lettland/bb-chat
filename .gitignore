@@ -3,3 +3,19 @@ dist/
 *.log
 *.bun-build
 .DS_Store
+
+# Bun is the only supported toolchain (see engines.bun). A second lockfile would
+# resolve a different dependency tree than `bun install --frozen-lockfile` in CI.
+pnpm-lock.yaml
+pnpm-workspace.yaml
+package-lock.json
+yarn.lock
+
+# Local agent/editor scratch, not part of the project.
+.claude/
+.idea/
+.vscode/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example

@@ -10,8 +10,8 @@ import {
 } from "../tui/spawn-wizard.ts";
 
 /**
- * `vch providers` — list the providers, their models, the reasoning levels, and
- * the permission modes: the valid values for `vch new` and the `vch <provider> …`
+ * `bbchat providers` — list the providers, their models, the reasoning levels, and
+ * the permission modes: the valid values for `bbchat new` and the `bbchat <provider> …`
  * shorthand. Read-only.
  */
 export async function runProviders(env: NodeJS.ProcessEnv = process.env): Promise<number> {
@@ -20,7 +20,7 @@ export async function runProviders(env: NodeJS.ProcessEnv = process.env): Promis
   const sdk = createSdk(server.serverUrl);
 
   const providers = toProviderChoices(await listProviders(sdk));
-  const lines: string[] = ["Providers and models (for vch new):", ""];
+  const lines: string[] = ["Providers and models (for bbchat new):", ""];
   if (providers.length === 0) {
     lines.push("  (no providers available)");
   }

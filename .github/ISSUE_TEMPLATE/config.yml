@@ -1,0 +1,13 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/lettland/bb-chat/security/advisories/new
+    about: Report privately via a GitHub Security Advisory — never as a public issue.
+  - name: BB server or provider problem
+    url: https://github.com/get-bb/bb
+    about: >
+      Threads not running, a provider failing, models missing — that is the BB
+      server, not this terminal client.
+  - name: Question or usage help
+    url: https://github.com/lettland/bb-chat/discussions
+    about: Ask in Discussions. Run `bbchat doctor` first — it answers most setup questions.

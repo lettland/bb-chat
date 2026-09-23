@@ -82,7 +82,7 @@ describe("resolveThemeMode", () => {
     waitForThemeMode: async () => mode,
   });
 
-  test("an explicit VCH_THEME wins over the terminal", async () => {
+  test("an explicit BBCHAT_THEME wins over the terminal", async () => {
     expect(await resolveThemeMode(reporting("dark"), "light")).toBe("light");
     expect(await resolveThemeMode(reporting("light"), "dark")).toBe("dark");
   });

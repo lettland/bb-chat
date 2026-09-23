@@ -30,22 +30,22 @@ describe("parseCommand", () => {
 });
 
 describe("envOverrides", () => {
-  test("VCH_SERVER_URL wins over BB_SERVER_URL", () => {
-    expect(envOverrides({ VCH_SERVER_URL: "http://a", BB_SERVER_URL: "http://b" })).toEqual({
+  test("BBCHAT_SERVER_URL wins over BB_SERVER_URL", () => {
+    expect(envOverrides({ BBCHAT_SERVER_URL: "http://a", BB_SERVER_URL: "http://b" })).toEqual({
       serverUrl: "http://a",
     });
     expect(envOverrides({ BB_SERVER_URL: "http://b" })).toEqual({ serverUrl: "http://b" });
   });
 
   test("parses commands and autoStart", () => {
-    expect(envOverrides({ VCH_START_COMMAND: "bb start", VCH_AUTO_START: "true" })).toEqual({
+    expect(envOverrides({ BBCHAT_START_COMMAND: "bb start", BBCHAT_AUTO_START: "true" })).toEqual({
       startCommand: ["bb", "start"],
       autoStart: true,
     });
   });
 
   test("ignores unrecognized autoStart values", () => {
-    expect(envOverrides({ VCH_AUTO_START: "maybe" })).toEqual({});
+    expect(envOverrides({ BBCHAT_AUTO_START: "maybe" })).toEqual({});
   });
 
   test("empty env yields empty overrides", () => {
@@ -88,10 +88,10 @@ describe("mergeConfig", () => {
 
 describe("configPath", () => {
   test("honors XDG_CONFIG_HOME", () => {
-    expect(configPath({ XDG_CONFIG_HOME: "/tmp/cfg" })).toBe("/tmp/cfg/vch/config.json");
+    expect(configPath({ XDG_CONFIG_HOME: "/tmp/cfg" })).toBe("/tmp/cfg/bbchat/config.json");
   });
 
   test("falls back to ~/.config", () => {
-    expect(configPath({ HOME: "/home/u" })).toContain("/.config/vch/config.json");
+    expect(configPath({ HOME: "/home/u" })).toContain("/.config/bbchat/config.json");
   });
 });

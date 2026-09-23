@@ -1,0 +1,15 @@
+# Normalize to LF in the repo regardless of contributor platform. The shell
+# scripts and the compiled binary must never be checked out with CRLF.
+* text=auto eol=lf
+
+*.sh text eol=lf
+bin/bbchat.js text eol=lf
+
+# Lockfile: generated, so collapse it by default and keep it out of language
+# stats. Deliberately NOT `-diff` — a dependency bump is the one change a
+# reviewer most needs to be able to read, and `-diff` would render it as binary.
+bun.lock linguist-generated=true
+
+# Release artifacts are binary.
+dist/** binary
+*.bun-build binary

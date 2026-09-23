@@ -4,22 +4,58 @@ on:
   push:
     tags: ["v*"]
 
+# A release is never worth racing against itself.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
-  contents: write
+  contents: read
 
 jobs:
+  # Publishing a tag whose version disagrees with package.json produces a release
+  # nobody can reproduce. Fail before anything is built or uploaded.
+  verify:
+    name: verify tag matches package.json
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Compare tag to package version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(bun --print 'require("./package.json").version')"
+          echo "tag=$tag package.json=$pkg"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag v$tag does not match package.json version $pkg"
+            exit 1
+          fi
+      - run: bun install --frozen-lockfile
+      # The same gate as CI. A tag can be pushed to a commit CI never ran on.
+      - run: bun run check
+
   binaries:
+    name: ${{ matrix.artifact }}
+    needs: verify
+    permissions:
+      contents: write
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
-            artifact: vch-linux-x64
+            artifact: bbchat-linux-x64
           - os: ubuntu-24.04-arm
-            artifact: vch-linux-arm64
-          - os: macos-13
-            artifact: vch-darwin-x64
+            artifact: bbchat-linux-arm64
+          # Intel macOS. GitHub retired the macos-13 runner; macos-15-intel is
+          # the current x64 image, and it is what produces a darwin-x64 binary —
+          # macos-latest is arm64 and would silently mislabel the artifact.
+          - os: macos-15-intel
+            artifact: bbchat-darwin-x64
           - os: macos-latest
-            artifact: vch-darwin-arm64
+            artifact: bbchat-darwin-arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -30,12 +66,31 @@ jobs:
       - run: bun build ./src/index.ts --compile --outfile "dist/${{ matrix.artifact }}"
       # Never publish a binary whose embedded grammars fail to highlight offline.
       - run: "./dist/${{ matrix.artifact }} selfcheck"
+      - name: Checksum
+        run: |
+          cd dist
+          shasum -a 256 "${{ matrix.artifact }}" > "${{ matrix.artifact }}.sha256"
+          cat "${{ matrix.artifact }}.sha256"
       - uses: softprops/action-gh-release@v2
         with:
-          files: dist/${{ matrix.artifact }}
+          files: |
+            dist/${{ matrix.artifact }}
+            dist/${{ matrix.artifact }}.sha256
+          # Without this, a missing binary or checksum uploads nothing and still
+          # reports success — and the npm job, which only gates on job status,
+          # would publish alongside an incomplete release.
+          fail_on_unmatched_files: true
+          generate_release_notes: true
 
   npm:
+    name: publish to npm
+    # Only publish once every platform binary built and self-checked. A broken
+    # binary and a good npm package is the worst of both worlds.
+    needs: binaries
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm provenance attestation
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -46,8 +101,21 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
       - run: bun install --frozen-lockfile
-      - run: bun run typecheck && bun run lint && bun test
-      # Publishes the source + bin wrapper (run under Bun). Requires NPM_TOKEN.
-      - run: npm publish --access public
+      # Publishes the source + bin wrapper, which run under Bun. Requires the
+      # NPM_TOKEN secret.
+      #
+      # --provenance signs an attestation of where the build came from, but npm
+      # only accepts it from a PUBLIC repository. Asking for it on a private repo
+      # fails the publish outright, so degrade to a plain publish with a warning
+      # rather than losing the release.
+      - name: Publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VISIBILITY: ${{ github.event.repository.visibility }}
+        run: |
+          if [ "$VISIBILITY" = "public" ]; then
+            npm publish --provenance --access public
+          else
+            echo "::warning::repository is $VISIBILITY — publishing without a provenance attestation"
+            npm publish --access public
+          fi

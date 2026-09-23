@@ -1,15 +1,15 @@
 /**
- * Resolves the `vch <provider> [model] [reasoning] [mode]` shorthand. Argv tokens
+ * Resolves the `bbchat <provider> [model] [reasoning] [mode]` shorthand. Argv tokens
  * are fuzzy-matched against the server's live provider/model lists and the fixed
  * reasoning/mode enums; every resolved field is a value drawn from those lists, so
  * a raw token never reaches `threads.spawn`. Matching is case-insensitive and
  * rejects empty tokens (guarding `"".endsWith`/`"".includes`, which are always
- * true). Bad tokens produce a `VchError` with the valid options enumerated.
+ * true). Bad tokens produce a `BbchatError` with the valid options enumerated.
  */
 
 import { listModels, listProviders } from "../bb/providers.ts";
 import type { BBSdk } from "../bb/sdk.ts";
-import { VchError } from "../errors.ts";
+import { BbchatError } from "../errors.ts";
 import {
   type Choice,
   PERMISSION_MODES,
@@ -81,7 +81,7 @@ export function matchProvider(providers: Choice[], token: string): Match<Choice>
     return fail(`ambiguous provider "${token}": ${ids(candidates)} — be more specific`);
   }
   return fail(
-    `unknown provider "${token}". available: ${ids(providers)} (see 'vch providers'; for a command see 'vch help')`,
+    `unknown provider "${token}". available: ${ids(providers)} (see 'bbchat providers'; for a command see 'bbchat help')`,
   );
 }
 
@@ -101,7 +101,7 @@ export function matchModel(models: Choice[], token: string): Match<Choice> {
 
   const cands = ends.length > 1 ? ends : contains;
   if (cands.length > 1) return fail(`ambiguous model "${token}": ${ids(cands)}`);
-  return fail(`unknown model "${token}". models: ${ids(models)} (see 'vch providers')`);
+  return fail(`unknown model "${token}". models: ${ids(models)} (see 'bbchat providers')`);
 }
 
 export interface ResolvedOptions {
@@ -148,10 +148,10 @@ export function resolveOptions(tokens: string[], models: Choice[]): Match<Resolv
 }
 
 /**
- * Resolve shorthand tokens against the live server. Bad tokens throw `VchError`
+ * Resolve shorthand tokens against the live server. Bad tokens throw `BbchatError`
  * (the command should abort with the message). A transport/API failure fetching
  * the provider or model lists returns `null` so the caller falls back to the plain
- * thread list — preserving parity with bare `vch` when BB briefly blips.
+ * thread list — preserving parity with bare `bbchat` when BB briefly blips.
  */
 export async function resolveSpawnShorthand(
   sdk: BBSdk,
@@ -167,7 +167,7 @@ export async function resolveSpawnShorthand(
     return null;
   }
   const prov = matchProvider(providers, providerToken);
-  if (!prov.ok) throw new VchError(prov.error);
+  if (!prov.ok) throw new BbchatError(prov.error);
 
   let models: Choice[];
   try {
@@ -176,7 +176,7 @@ export async function resolveSpawnShorthand(
     return null;
   }
   const opt = resolveOptions(optionTokens, models);
-  if (!opt.ok) throw new VchError(opt.error);
+  if (!opt.ok) throw new BbchatError(opt.error);
 
   return {
     providerId: prov.value.id,

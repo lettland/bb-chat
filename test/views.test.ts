@@ -61,7 +61,7 @@ function fakeSdk(o: StubOptions = {}): BBSdk {
     },
     projects: {
       list: async () => [
-        { id: "p1", name: "vch" },
+        { id: "p1", name: "bbchat" },
         { id: "p2", name: "ripwire" },
       ],
     },
@@ -131,7 +131,7 @@ async function boot() {
   return { t, navigator, press, frame, shows, exited: () => exited };
 }
 
-const project = { id: "prj_1", name: "vch" };
+const project = { id: "prj_1", name: "bbchat" };
 
 describe("ThreadListView (keyboard parity after the SelectRenderable migration)", () => {
   test("renders the project, threads, count and hints", async () => {
@@ -297,7 +297,7 @@ describe("ThreadView chrome", () => {
     expect(text).toContain("fix/flaky");
     expect(text).toContain("hello");
     expect(text).toContain("enter send");
-    expect(text).toContain("esc quit"); // opened directly: esc leaves vch
+    expect(text).toContain("esc quit"); // opened directly: esc leaves bbchat
   });
 
   test("a metadata failure still renders the transcript with the fallback title", async () => {
@@ -313,7 +313,7 @@ describe("ThreadView chrome", () => {
 describe("MessageView", () => {
   test("renders its lines with the shared chrome", async () => {
     const app = await boot();
-    await app.navigator.push(new MessageView("vch", ["No project in focus."]));
+    await app.navigator.push(new MessageView("bbchat", ["No project in focus."]));
     const text = await app.shows("No project in focus.");
     expect(text).toContain("q or esc to go back");
   });

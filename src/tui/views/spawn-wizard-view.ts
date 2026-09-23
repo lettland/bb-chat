@@ -72,7 +72,7 @@ export class SpawnWizardView implements View {
     // The project id is resolved lazily on submit so the wizard opening (and
     // cancelling) never creates a project — only actually spawning a thread does.
     private readonly resolveProjectId: () => Promise<{ id: string; name: string }>,
-    // New-thread defaults from the `vch <provider> …` shorthand, pre-seeded on mount.
+    // New-thread defaults from the `bbchat <provider> …` shorthand, pre-seeded on mount.
     private readonly preset: SpawnPreset | null = null,
   ) {}
 

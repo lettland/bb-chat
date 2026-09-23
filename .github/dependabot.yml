@@ -1,0 +1,58 @@
+version: 2
+updates:
+  # GitHub Actions has no lockfile, so these PRs are mergeable as opened.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - ci
+
+  # ---------------------------------------------------------------------------
+  # JavaScript dependency updates are deliberately DISABLED, not forgotten.
+  #
+  # Both available ecosystems are broken for this repo as of 2026-09:
+  #
+  #   package-ecosystem: npm
+  #     Updates package.json but never bun.lock, so CI's
+  #     `bun install --frozen-lockfile` rejects the mismatch and every PR is red
+  #     until someone runs `bun install` on the branch by hand.
+  #
+  #   package-ecosystem: bun
+  #     Regenerates bun.lock in the same PR, which is what we want — but the Bun
+  #     bundled with Dependabot only reads lockfileVersion 1, and this repo's
+  #     bun.lock (written by Bun 1.4.2) is lockfileVersion 2. Dependabot fails
+  #     with `DependencyFileNotSupported: Unsupported bun.lock 'lockfileVersion' 2`.
+  #     Tracking: https://github.com/dependabot/dependabot-core/issues/6528
+  #
+  # Note that the bun ecosystem also supports version updates only — there are no
+  # Dependabot *security* updates for Bun projects either way, so dependencies
+  # need a periodic manual `bun outdated` regardless.
+  #
+  # Re-enable the block below once Dependabot reads lockfileVersion 2. The two
+  # runtime deps are pinned exactly and ignored for minor/major on purpose:
+  # @opentui/core drives the TUI and bb-app is the server contract, and both
+  # break on minor bumps — upgrade them deliberately, not automatically.
+  # ---------------------------------------------------------------------------
+  #
+  # - package-ecosystem: bun
+  #   directory: /
+  #   schedule:
+  #     interval: weekly
+  #     day: monday
+  #   open-pull-requests-limit: 5
+  #   labels:
+  #     - dependencies
+  #   groups:
+  #     dev-dependencies:
+  #       dependency-type: development
+  #       update-types:
+  #         - minor
+  #         - patch
+  #   ignore:
+  #     - dependency-name: "@opentui/core"
+  #       update-types: ["version-update:semver-minor", "version-update:semver-major"]
+  #     - dependency-name: "bb-app"
+  #       update-types: ["version-update:semver-minor", "version-update:semver-major"]

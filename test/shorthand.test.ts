@@ -58,8 +58,8 @@ describe("matchProvider", () => {
     expect(m.ok).toBe(false);
     if (!m.ok) {
       expect(m.error).toContain("unknown provider");
-      expect(m.error).toContain("vch providers");
-      expect(m.error).toContain("vch help");
+      expect(m.error).toContain("bbchat providers");
+      expect(m.error).toContain("bbchat help");
     }
   });
 

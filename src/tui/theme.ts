@@ -1,5 +1,5 @@
 /**
- * The single source of truth for vch's terminal palette, glyphs, and syntax
+ * The single source of truth for bbchat's terminal palette, glyphs, and syntax
  * highlighting style. Everything visual resolves through here so colors are not
  * scattered as literals across views.
  *
@@ -136,7 +136,7 @@ export function getThemeMode(): ThemeMode {
 const THEME_DETECT_MS = 250;
 
 /**
- * Decide the startup palette. An explicit `forced` value (`VCH_THEME=light|dark`)
+ * Decide the startup palette. An explicit `forced` value (`BBCHAT_THEME=light|dark`)
  * wins; otherwise ask the terminal, falling back to dark when it doesn't answer
  * in time or the query fails. Resolved once — views take their colors when built,
  * so switching later would not repaint what is already mounted.

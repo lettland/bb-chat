@@ -1,0 +1,87 @@
+name: Bug report
+description: Something in bbchat behaves incorrectly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: if this is a **security** issue, do not open an issue —
+        use [a private advisory](https://github.com/lettland/bb-chat/security/advisories/new)
+        instead.
+
+        If BB itself is misbehaving (threads not running, a provider failing),
+        that belongs upstream at [get-bb/bb](https://github.com/get-bb/bb).
+        This tracker is for the terminal client.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. cd into a project
+        2. run `bbchat codex 5.6-sol high`
+        3. press `n`
+        4. …
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `bbchat doctor`
+      description: >
+        This reports your config and whether BB is reachable. Redact anything
+        private — paths and URLs are usually the useful part.
+      render: text
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: bbchat version
+      description: Output of `bbchat version`.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How did you install it?
+      options:
+        - Standalone binary from releases
+        - bun run install:local
+        - npm / bun install -g
+        - From source (bun run dev)
+    validations:
+      required: true
+
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal and OS
+      description: >
+        e.g. "Ghostty 1.1 on macOS 15.3 (arm64)". Terminal matters for any
+        rendering, color, or keybinding issue.
+    validations:
+      required: true
+
+  - type: textarea
+    id: rendering
+    attributes:
+      label: For rendering issues — a screenshot, and the raw text
+      description: >
+        If the transcript, a diff, or a code fence renders wrong, attach a
+        screenshot **and** paste the raw source text that produced it. The
+        markdown-safety filter intentionally renders some messages as plain
+        text; the raw text is how we tell that apart from a bug.
+    validations:
+      required: false

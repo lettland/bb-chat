@@ -1,7 +1,7 @@
 import { candidateServerUrls, detect, detectionToConfig } from "../bb/detect.ts";
 import { createSdk } from "../bb/sdk.ts";
 import { configPath, parseCommand, writeConfigFile } from "../config.ts";
-import type { VchConfig } from "../types.ts";
+import type { BbchatConfig } from "../types.ts";
 
 export interface InitOptions {
   yes: boolean;
@@ -16,7 +16,7 @@ export interface InitPrompter {
 }
 
 /** Interactively refine a config. Pure given the prompter. */
-export function promptConfig(config: VchConfig, prompter: InitPrompter): VchConfig {
+export function promptConfig(config: BbchatConfig, prompter: InitPrompter): BbchatConfig {
   const serverUrl = prompter.text("BB server URL", config.serverUrl) || config.serverUrl;
   const startRaw = prompter.text(
     "Start command to launch BB when it is down (blank = none)",
@@ -44,7 +44,7 @@ const bunPrompter: InitPrompter = {
   },
 };
 
-function summarize(config: VchConfig, reachable: boolean): string {
+function summarize(config: BbchatConfig, reachable: boolean): string {
   return [
     `  serverUrl     ${config.serverUrl}${reachable ? "  (reachable)" : ""}`,
     `  bbCommand     ${config.bbCommand ? config.bbCommand.join(" ") : "(none)"}`,
@@ -69,16 +69,16 @@ async function serverInfo(serverUrl: string): Promise<string | null> {
  * bbCommand/startCommand is expected. They are only needed to auto-launch BB when
  * it is unreachable; a reachable server needs neither.
  */
-function commandNote(config: VchConfig, reachable: boolean): string {
+function commandNote(config: BbchatConfig, reachable: boolean): string {
   if (config.startCommand) return "";
   if (reachable) {
-    return "\nNo start command detected — not needed while BB is reachable. It is only used to auto-launch BB when it is down; the server doesn't expose its own launch command, so it can't be filled in automatically. Set startCommand + autoStart yourself if you want vch to launch BB.\n";
+    return "\nNo start command detected — not needed while BB is reachable. It is only used to auto-launch BB when it is down; the server doesn't expose its own launch command, so it can't be filled in automatically. Set startCommand + autoStart yourself if you want bbchat to launch BB.\n";
   }
-  return "\nBB was not reachable and no launch command was detected. Start BB yourself, or set startCommand + autoStart in the config so vch can launch it.\n";
+  return "\nBB was not reachable and no launch command was detected. Start BB yourself, or set startCommand + autoStart in the config so bbchat can launch it.\n";
 }
 
 /**
- * `vch init` — detect a system-local BB and write an editable config. Interactive
+ * `bbchat init` — detect a system-local BB and write an editable config. Interactive
  * by default (review/edit each field); `--yes` or a non-TTY stdin writes the
  * detected values without prompting. Never launches anything; `autoStart`
  * defaults to `false`.
@@ -93,7 +93,7 @@ export async function runInit(
   let config = detectionToConfig(detection, candidates[0]);
 
   // An explicitly-requested URL wins over whatever stray server answered detection.
-  const explicitUrl = env.VCH_SERVER_URL?.trim() || env.BB_SERVER_URL?.trim() || null;
+  const explicitUrl = env.BBCHAT_SERVER_URL?.trim() || env.BB_SERVER_URL?.trim() || null;
   if (explicitUrl) config.serverUrl = explicitUrl;
 
   const reachable = detection.runningServerUrl === config.serverUrl;

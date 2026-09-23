@@ -1,0 +1,13 @@
+# Default owner for everything in the repo.
+*                       @k0d3r1s
+
+# Safety-critical: anything rendering untrusted server content into a terminal.
+# See SECURITY.md for why these two files exist.
+/src/tui/sanitize.ts        @k0d3r1s
+/src/tui/markdown-safety.ts @k0d3r1s
+
+# Release and supply chain.
+/.github/workflows/     @k0d3r1s
+/scripts/               @k0d3r1s
+/package.json           @k0d3r1s
+/bun.lock               @k0d3r1s

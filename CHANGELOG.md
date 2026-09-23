@@ -1,0 +1,51 @@
+# Changelog
+
+All notable changes to this project are documented here.
+
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
+this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+Nothing has been tagged or published yet, so everything below is still pending
+the first release. Versioned sections start at `0.1.0`.
+
+### Changed
+
+- **Renamed the tool from `vch` to `bbchat`.** This is a breaking rename of every
+  user-facing name, done before the first published release:
+  - binary and npm package: `vch` → `bbchat`
+  - config directory: `~/.config/vch/` → `~/.config/bbchat/`
+  - environment prefix: `VCH_*` → `BBCHAT_*` (`BBCHAT_SERVER_URL`,
+    `BBCHAT_START_COMMAND`, `BBCHAT_BB_COMMAND`, `BBCHAT_AUTO_START`,
+    `BBCHAT_THEME`, `BBCHAT_INSTALL_MODE`)
+  - release artifacts: `vch-<os>-<arch>` → `bbchat-<os>-<arch>`
+
+  There is no compatibility shim. Re-run `bbchat init`, or move your existing
+  config with `mv ~/.config/vch ~/.config/bbchat`.
+
+### Added
+
+- Project scaffold: `LICENSE` (MIT), `CONTRIBUTING.md`, `SECURITY.md`,
+  `CODE_OF_CONDUCT.md`, `.editorconfig`, `.gitattributes`, issue and pull
+  request templates, `CODEOWNERS`, and Dependabot updates for npm and GitHub
+  Actions.
+- `bun run check` — one command running typecheck, lint, and tests, matching the
+  CI gate.
+- `test/naming.test.ts` — asserts the binary name, npm package name, config
+  directory, and `BBCHAT_*` environment prefix stay consistent, and that
+  `src/version.ts` matches `package.json`.
+
+### Fixed
+
+- Migrated `biome.json` off the deprecated `linter.rules.recommended` key, so
+  `bun run lint` is clean rather than merely passing.
+
+### Baseline
+
+The client this scaffold wraps: config and `init` detection, server
+ensure/health, project resolution, the global home, live thread list, streaming
+chat and composer, the spawn wizard, diff review, terminals, and plugin/skill
+listings.
+
+[Unreleased]: https://github.com/lettland/bb-chat/commits/master

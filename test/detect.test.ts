@@ -4,7 +4,7 @@ import { DEFAULT_SERVER_URL } from "../src/config.ts";
 
 describe("candidateServerUrls", () => {
   test("env url first, default appended once", () => {
-    expect(candidateServerUrls({ VCH_SERVER_URL: "http://env" })).toEqual([
+    expect(candidateServerUrls({ BBCHAT_SERVER_URL: "http://env" })).toEqual([
       "http://env",
       DEFAULT_SERVER_URL,
     ]);
@@ -12,7 +12,7 @@ describe("candidateServerUrls", () => {
   });
 
   test("does not duplicate the default", () => {
-    expect(candidateServerUrls({ VCH_SERVER_URL: DEFAULT_SERVER_URL })).toEqual([
+    expect(candidateServerUrls({ BBCHAT_SERVER_URL: DEFAULT_SERVER_URL })).toEqual([
       DEFAULT_SERVER_URL,
     ]);
   });

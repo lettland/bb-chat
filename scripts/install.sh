@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# Build and install the vch standalone binary to a bin directory.
+# Build and install the bbchat standalone binary to a bin directory.
 #
-#   bun run install:local                 # → ~/.local/bin/vch
+#   bun run install:local                 # → ~/.local/bin/bbchat
 #   PREFIX=/usr/local/bin bun run install:local
-#   VCH_INSTALL_MODE=link bun run install:local   # symlink the source wrapper (dev)
+#   BBCHAT_INSTALL_MODE=link bun run install:local   # symlink the source wrapper (dev)
 #
 # Default mode compiles a self-contained binary (embeds Bun + native deps), so it
-# keeps working even if this repo moves. `link` mode symlinks bin/vch.js and runs
+# keeps working even if this repo moves. `link` mode symlinks bin/bbchat.js and runs
 # the live source — handy while developing, but the repo + node_modules must stay.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 prefix="${PREFIX:-$HOME/.local/bin}"
-mode="${VCH_INSTALL_MODE:-compile}"
-target="$prefix/vch"
+mode="${BBCHAT_INSTALL_MODE:-compile}"
+target="$prefix/bbchat"
 mkdir -p "$prefix"
 
 echo "installing dependencies…"
@@ -26,16 +26,16 @@ case "$mode" in
     ;;
   link)
     echo "linking source wrapper → $target"
-    ln -sf "$PWD/bin/vch.js" "$target"
+    ln -sf "$PWD/bin/bbchat.js" "$target"
     ;;
   *)
-    echo "unknown VCH_INSTALL_MODE: $mode (expected 'compile' or 'link')" >&2
+    echo "unknown BBCHAT_INSTALL_MODE: $mode (expected 'compile' or 'link')" >&2
     exit 1
     ;;
 esac
 
 chmod +x "$target" 2>/dev/null || true
-echo "installed vch $("$target" version) → $target"
+echo "installed bbchat $("$target" version) → $target"
 
 case ":$PATH:" in
   *":$prefix:"*) ;;

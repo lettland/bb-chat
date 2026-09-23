@@ -1,0 +1,45 @@
+name: Feature request
+description: Suggest a capability or improvement for bbchat
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `bbchat` is a **client**. It renders and drives what the BB server
+        exposes — it is not a provider, and it does not add capabilities BB
+        doesn't have. If what you want is new agent behaviour, that belongs
+        upstream at [get-bb/bb](https://github.com/get-bb/bb).
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: >
+        Describe the situation, not the solution. What are you doing today, and
+        where does it get awkward?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to happen?
+      description: If you have a concrete idea for the CLI surface or keybinding, sketch it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What have you tried instead?
+      description: Existing commands, keys, or config that get part of the way there.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: This is about the terminal client, not about BB itself or a provider
+          required: true

@@ -14,7 +14,7 @@ function hints(isRoot: boolean): string {
 }
 
 /**
- * Global home (`vch -g`): every project the user can see, newest counts. Enter
+ * Global home (`bbchat -g`): every project the user can see, newest counts. Enter
  * opens a project's thread list. The all-projects analogue of the web app home.
  */
 export class GlobalHomeView implements View {

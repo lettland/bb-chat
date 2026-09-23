@@ -1,6 +1,6 @@
 /**
  * A cheap heuristic to catch obviously low-value spawn prompts before they cost
- * provider tokens (`vch new "hi"`). This is NOT intent detection — real intent
+ * provider tokens (`bbchat new "hi"`). This is NOT intent detection — real intent
  * analysis would itself burn tokens and be unreliable. It only flags empty
  * input, common greetings/filler, and prompts too short to be a task, so the CLI
  * can ask for confirmation. Anything that reads like an actual request passes.

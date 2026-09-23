@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a standalone vch binary for the CURRENT platform. OpenTUI ships
+# Build a standalone bbchat binary for the CURRENT platform. OpenTUI ships
 # platform-specific native code, so binaries are built natively per platform
 # (the release workflow runs this on a matrix of OS/arch runners) rather than
 # cross-compiled.
@@ -15,7 +15,7 @@ case "$arch" in
   aarch64 | arm64) arch="arm64" ;;
 esac
 
-out="dist/vch-${os}-${arch}"
+out="dist/bbchat-${os}-${arch}"
 echo "building ${out}"
 bun build ./src/index.ts --compile --outfile "${out}"
 echo "done: ${out}"

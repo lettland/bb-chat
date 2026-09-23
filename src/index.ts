@@ -12,7 +12,7 @@ import { runSelfcheck } from "./cli/selfcheck.ts";
 import { resolveSpawnShorthand } from "./cli/shorthand.ts";
 import { runThreads } from "./cli/threads.ts";
 import { resolveConfig } from "./config.ts";
-import { isVchError, VchError } from "./errors.ts";
+import { BbchatError, isBbchatError } from "./errors.ts";
 import type { ChatContext } from "./tui/app.ts";
 import { runChat } from "./tui/app.ts";
 import {
@@ -27,13 +27,13 @@ import { VERSION } from "./version.ts";
 /** Reject a flag value that isn't one of the allowed enum values. */
 function assertEnumFlag(flag: string, value: string | null, allowed: readonly string[]): void {
   if (value !== null && !allowed.includes(value)) {
-    throw new VchError(`invalid ${flag} "${value}"`, `expected one of: ${allowed.join(", ")}`);
+    throw new BbchatError(`invalid ${flag} "${value}"`, `expected one of: ${allowed.join(", ")}`);
   }
 }
 
-/** The `vch new …` command that reproduces a resolved shorthand preset, for hints. */
+/** The `bbchat new …` command that reproduces a resolved shorthand preset, for hints. */
 function presetCommandHint(preset: SpawnPreset | null): string {
-  const base = 'vch new "your first task"';
+  const base = 'bbchat new "your first task"';
   if (!preset) return base;
   const flags = [
     `--provider ${preset.providerId}`,
@@ -44,30 +44,31 @@ function presetCommandHint(preset: SpawnPreset | null): string {
   return `${base} ${flags.join(" ")}`;
 }
 
-const HELP = `vch ${VERSION} — BB in your terminal
+const HELP = `bbchat ${VERSION} — BB in your terminal
 
 Usage:
-  vch                     Open the current directory's project (does not create one)
-  vch <provider> [model] [reasoning] [mode]
-                          Open the thread list with those new-thread defaults
-                          (opens the list, does not spawn; order-independent).
-                          e.g. vch codex 5.6-sol high   ·   vch claude 'opus-5[1m]'
-                          (quote models with [brackets] so the shell doesn't glob them)
-  vch -g, --global        Global home: all projects
-  vch <thread-id>         Open a specific thread (thr_...)
-  vch threads             List this project's threads and their ids
-  vch new ["prompt"]      Start a thread (interactive picker if no prompt)
+  bbchat                      Open the current directory's project (does not create one)
+  bbchat <provider> [model] [reasoning] [mode]
+                              Open the thread list with those new-thread defaults
+                              (opens the list, does not spawn; order-independent).
+                              e.g. bbchat codex 5.6-sol high · bbchat claude 'opus-5[1m]'
+                              (quote models with [brackets] so the shell doesn't glob them)
+  bbchat -g, --global         Global home: all projects
+  bbchat <thread-id>          Open a specific thread (thr_...)
+  bbchat threads              List this project's threads and their ids
+  bbchat new ["prompt"]       Start a thread (interactive picker if no prompt)
       [--provider <id>] [--model <id>] [--reasoning <level>] [--mode <mode>] [--force]
       (a trivial prompt like "hi" asks to confirm; --force skips the check)
-  vch providers           List providers, models, reasoning levels, and modes
-  vch init [--yes] [--force] [--print]   Detect system-local BB, write editable config
-  vch doctor              Diagnose config + BB reachability
-  vch selfcheck           Verify offline markdown/code highlighting in this build
-  vch help | version
+  bbchat providers            List providers, models, reasoning levels, and modes
+  bbchat init [--yes] [--force] [--print]
+                              Detect system-local BB, write an editable config
+  bbchat doctor               Diagnose config + BB reachability
+  bbchat selfcheck            Verify offline markdown/code highlighting in this build
+  bbchat help | version
 
-Configuration (~/.config/vch/config.json, overridable by env):
-  VCH_SERVER_URL / BB_SERVER_URL, VCH_START_COMMAND, VCH_BB_COMMAND, VCH_AUTO_START
-  VCH_THEME=light|dark    Force the palette (default: follow the terminal's background)
+Configuration (~/.config/bbchat/config.json, overridable by env):
+  BBCHAT_SERVER_URL / BB_SERVER_URL, BBCHAT_START_COMMAND, BBCHAT_BB_COMMAND, BBCHAT_AUTO_START
+  BBCHAT_THEME=light|dark    Force the palette (default: follow the terminal's background)
 `;
 
 async function runChatCommand(
@@ -79,13 +80,13 @@ async function runChatCommand(
   const server = await ensureServer(config);
   const sdk = createSdk(server.serverUrl);
 
-  // Resolve the `vch <provider> …` shorthand into new-thread defaults. A bad token
-  // throws VchError (aborts with the valid options); a transport blip yields null,
-  // so the command still behaves exactly like bare `vch`.
+  // Resolve the `bbchat <provider> …` shorthand into new-thread defaults. A bad token
+  // throws BbchatError (aborts with the valid options); a transport blip yields null,
+  // so the command still behaves exactly like bare `bbchat`.
   const spawnPreset: SpawnPreset | null =
     spawnTokens && spawnTokens.length > 0 ? await resolveSpawnShorthand(sdk, spawnTokens) : null;
 
-  // Opening a specific thread or the global home needs no project. Bare `vch`
+  // Opening a specific thread or the global home needs no project. Bare `bbchat`
   // only OPENS the cwd's project — it does not create one (that happens when you
   // start a thread), so merely opening in a new directory has no side effect.
   let project: ChatContext["project"] = null;
@@ -104,7 +105,7 @@ async function runChatCommand(
   if (!process.stdout.isTTY) {
     const scope = threadId ?? (global ? "global" : (project?.name ?? "project"));
     process.stdout.write(
-      `Connected to BB at ${server.serverUrl} (${scope}). Run vch in a terminal to open the interactive UI.\n`,
+      `Connected to BB at ${server.serverUrl} (${scope}). Run bbchat in a terminal to open the interactive UI.\n`,
     );
     return 0;
   }
@@ -125,7 +126,7 @@ async function runChatCommand(
 }
 
 /**
- * `vch new`. With a prompt, quick-spawns a thread using the given
+ * `bbchat new`. With a prompt, quick-spawns a thread using the given
  * provider/model/mode (project-default environment) and opens it. Without a
  * prompt, opens the interactive spawn wizard.
  */
@@ -149,7 +150,7 @@ async function runNew(
   if (!promptText) {
     if (!process.stdout.isTTY) {
       process.stdout.write(
-        'Run `vch new` in a terminal for the picker, or pass a task: vch new "your task".\n',
+        'Run `bbchat new` in a terminal for the picker, or pass a task: bbchat new "your task".\n',
       );
       return 0;
     }
@@ -179,7 +180,7 @@ async function runNew(
           return 0;
         }
       } else {
-        throw new VchError(
+        throw new BbchatError(
           `Refusing to spawn: the prompt ${assessment.reason}.`,
           "Give a more specific task, or pass --force to spawn anyway.",
         );
@@ -200,12 +201,12 @@ async function runNew(
       prompt: promptText,
     });
   } catch (error) {
-    throw new VchError(
+    throw new BbchatError(
       `could not start a thread: ${errorText(error)}`,
-      "check 'vch providers' for valid --provider / --model values",
+      "check 'bbchat providers' for valid --provider / --model values",
     );
   }
-  if (!threadId) throw new VchError("BB did not return a new thread id.");
+  if (!threadId) throw new BbchatError("BB did not return a new thread id.");
 
   if (!process.stdout.isTTY) {
     process.stdout.write(`Created ${threadId}\n`);
@@ -261,12 +262,12 @@ main()
     process.exitCode = code;
   })
   .catch((error: unknown) => {
-    if (isVchError(error)) {
-      process.stderr.write(`vch: ${error.message}\n`);
+    if (isBbchatError(error)) {
+      process.stderr.write(`bbchat: ${error.message}\n`);
       if (error.hint) process.stderr.write(`     ${error.hint}\n`);
     } else {
-      process.stderr.write(`vch: unexpected error: ${String(error)}\n`);
-      if (process.env.VCH_DEBUG && error instanceof Error && error.stack) {
+      process.stderr.write(`bbchat: unexpected error: ${String(error)}\n`);
+      if (process.env.BBCHAT_DEBUG && error instanceof Error && error.stack) {
         process.stderr.write(`${error.stack}\n`);
       }
     }

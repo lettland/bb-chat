@@ -1,10 +1,10 @@
-/** Parsed `vch` invocation. One variant per subcommand. */
+/** Parsed `bbchat` invocation. One variant per subcommand. */
 export type Command =
   | {
       kind: "chat";
       global: boolean;
       threadId: string | null;
-      /** `vch <provider> [model] [reasoning] [mode]` tokens (flags removed), else null. */
+      /** `bbchat <provider> [model] [reasoning] [mode]` tokens (flags removed), else null. */
       spawnTokens: string[] | null;
     }
   | {
@@ -40,7 +40,7 @@ function isThreadId(token: string): boolean {
 /**
  * Parse argv (already stripped of the runtime + script, i.e. `Bun.argv.slice(2)`)
  * into a `Command`. Unknown leading tokens fall through to `chat` (a bare thread
- * id opens that thread), keeping the common path — `vch` — zero-friction.
+ * id opens that thread), keeping the common path — `bbchat` — zero-friction.
  */
 export function parseArgs(argv: string[]): Command {
   const [first, ...rest] = argv;
@@ -71,7 +71,7 @@ export function parseArgs(argv: string[]): Command {
   const global = argv.includes("-g") || argv.includes("--global");
   const threadId = argv.find((token) => isThreadId(token)) ?? null;
   if (!first.startsWith("-") && !isThreadId(first)) {
-    // `vch <provider> [model] [reasoning] [mode]`. Flags are filtered out so a
+    // `bbchat <provider> [model] [reasoning] [mode]`. Flags are filtered out so a
     // trailing `-g` never reaches option resolution; `global` still comes from argv.
     const spawnTokens = argv.filter((token) => !token.startsWith("-"));
     return { kind: "chat", global, threadId: null, spawnTokens };

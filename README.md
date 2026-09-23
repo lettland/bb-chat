@@ -1,12 +1,19 @@
-# vch
+# bbchat
 
-**BB in your terminal.** A full TUI client for the [BB](https://github.com/get-bb/bb) coding-agent server — the terminal equivalent of the BB desktop app. `cd` into a project, run `vch`, and you're in that project's threads: connect to (or start) BB, browse and open threads, pick providers, watch live agent activity, review diffs, attach terminals.
+[![ci](https://github.com/lettland/bb-chat/actions/workflows/ci.yml/badge.svg)](https://github.com/lettland/bb-chat/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/bbchat.svg)](https://www.npmjs.com/package/bbchat)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-`vch` is **not** a provider and **not** an upstream BB feature. It's a third client alongside the desktop/web app, talking to BB over its published SDK (`bb-app`) via HTTP/WebSocket. Provider work (Claude Code / Codex / OpenCode) still runs inside BB.
+**BB in your terminal.** A full TUI client for the [BB](https://github.com/get-bb/bb) coding-agent server — the terminal equivalent of the BB desktop app. `cd` into a project, run `bbchat`, and you're in that project's threads: connect to (or start) BB, browse and open threads, pick providers, watch live agent activity, review diffs, attach terminals.
+
+`bbchat` is **not** a provider and **not** an upstream BB feature. It's a third client alongside the desktop/web app, talking to BB over its published SDK (`bb-app`) via HTTP/WebSocket. Provider work (Claude Code / Codex / OpenCode) still runs inside BB.
+
+> The repository is `bb-chat`; the command, the npm package, the config
+> directory, and the `BBCHAT_*` environment prefix are all `bbchat`.
 
 ## Status
 
-Working: config + `vch init` detection, server ensure/health, project resolution
+Working: config + `bbchat init` detection, server ensure/health, project resolution
 (auto-create), the global home, live thread list, streaming chat + composer, the
 spawn wizard (provider → model → mode → prompt), diff review, terminals, and
 plugin/skill listings. The interactive views are typecheck-verified and their
@@ -26,34 +33,37 @@ screen shares one themed frame with dark and light palettes.
 ## Install
 
 - **Build & install locally** — `bun run install:local` compiles a standalone
-  binary to `~/.local/bin/vch`. Override the target with `PREFIX=/usr/local/bin
+  binary to `~/.local/bin/bbchat`. Override the target with `PREFIX=/usr/local/bin
   bun run install:local`, or symlink the live source instead with
-  `VCH_INSTALL_MODE=link bun run install:local`.
-- **Binary** — download the `vch-<os>-<arch>` build for your platform from the
-  [releases](https://github.com/valksor/vch/releases), `chmod +x`, put it on your `PATH`.
-- **npm** (requires Bun) — `bun install -g vch`, then `vch`.
+  `BBCHAT_INSTALL_MODE=link bun run install:local`.
+- **Binary** — download the `bbchat-<os>-<arch>` build for your platform from the
+  [releases](https://github.com/lettland/bb-chat/releases), verify it against the
+  published `.sha256`, `chmod +x`, put it on your `PATH`.
+- **npm** (requires Bun) — `bun install -g bbchat`, then `bbchat`.
 - **From source** — `bun install && bun run dev`.
 
 ## Usage
 
 ```
-vch                      Open the current directory's project (does not create one)
-vch <provider> [model] [reasoning] [mode]
-                         Open the thread list with those new-thread defaults
-                         (opens the list, does not spawn; tokens are order-independent)
-vch -g, --global         Global home: all projects
-vch <thread-id>          Open a specific thread (thr_...)
-vch threads              List this project's threads and their ids
-vch new ["prompt"]       Start a thread ([--provider][--model][--reasoning][--mode], or interactive)
-vch providers            List providers, models, reasoning levels, and modes
-vch init [--print]       Detect system-local BB, write an editable config
-vch doctor               Diagnose config + BB reachability
-vch selfcheck            Verify this build highlights markdown/code offline
-vch help | version
+bbchat                      Open the current directory's project (does not create one)
+bbchat <provider> [model] [reasoning] [mode]
+                            Open the thread list with those new-thread defaults
+                            (opens the list, does not spawn; tokens are order-independent)
+bbchat -g, --global         Global home: all projects
+bbchat <thread-id>          Open a specific thread (thr_...)
+bbchat threads              List this project's threads and their ids
+bbchat new ["prompt"]       Start a thread (interactive picker if no prompt)
+    [--provider <id>] [--model <id>] [--reasoning <level>] [--mode <mode>] [--force]
+bbchat providers            List providers, models, reasoning levels, and modes
+bbchat init [--yes] [--force] [--print]
+                            Detect system-local BB, write an editable config
+bbchat doctor               Diagnose config + BB reachability
+bbchat selfcheck            Verify this build highlights markdown/code offline
+bbchat help | version
 ```
 
-**Shorthand.** `vch <provider>` opens the current project's thread list (exactly
-like bare `vch`) but seeds the provider/model/reasoning/mode a *new* thread will
+**Shorthand.** `bbchat <provider>` opens the current project's thread list (exactly
+like bare `bbchat`) but seeds the provider/model/reasoning/mode a *new* thread will
 use — the thread list shows the active default, and pressing `n` opens the spawn
 wizard pre-filled. Tokens after the provider are matched by what they are, in any
 order, and fuzzy: provider and model aliases resolve against the server's live
@@ -61,13 +71,13 @@ lists (`codex`, `claude`, `opencode`; `5.6-sol`→`gpt-5.6-sol`), reasoning is o
 `none|low|medium|high|xhigh|ultracode|max|ultra`, mode is `accept-edits|auto|full`.
 
 ```
-vch codex 5.6-sol high     # codex, gpt-5.6-sol, reasoning high
-vch claude 'opus-5[1m]'    # claude-code, claude-opus-5[1m]  ← quote [brackets]
-vch codex                  # just default the provider to codex
+bbchat codex 5.6-sol high     # codex, gpt-5.6-sol, reasoning high
+bbchat claude 'opus-5[1m]'    # claude-code, claude-opus-5[1m]  ← quote [brackets]
+bbchat codex                  # just default the provider to codex
 ```
 
 Quote models containing `[brackets]` so your shell doesn't treat them as a glob.
-Run `vch providers` for the exact provider/model/reasoning/mode values.
+Run `bbchat providers` for the exact provider/model/reasoning/mode values.
 
 In-app keys: `↑/↓` move · `enter` open/select · `n` new thread · `p` plugins
 (global) / skills (project) · in a thread `ctrl+o` diff · `ctrl+t` terminals ·
@@ -75,7 +85,7 @@ In-app keys: `↑/↓` move · `enter` open/select · `n` new thread · `p` plug
 
 ## Configuration
 
-`vch` never assumes or auto-launches an official BB. What server it talks to — and how it's started if down — is entirely config-driven. `vch init` detects a system-local BB and writes an editable `~/.config/vch/config.json`:
+`bbchat` never assumes or auto-launches an official BB. What server it talks to — and how it's started if down — is entirely config-driven. `bbchat init` detects a system-local BB and writes an editable `~/.config/bbchat/config.json`:
 
 ```json
 {
@@ -86,28 +96,47 @@ In-app keys: `↑/↓` move · `enter` open/select · `n` new thread · `p` plug
 }
 ```
 
-Environment overrides: `VCH_SERVER_URL` / `BB_SERVER_URL`, `VCH_START_COMMAND`, `VCH_BB_COMMAND`, `VCH_AUTO_START`.
+Environment overrides: `BBCHAT_SERVER_URL` / `BB_SERVER_URL`, `BBCHAT_START_COMMAND`, `BBCHAT_BB_COMMAND`, `BBCHAT_AUTO_START`.
 
-Appearance: `vch` follows the terminal's light/dark background. Set
-`VCH_THEME=light` or `VCH_THEME=dark` to force a palette when the terminal doesn't
+Appearance: `bbchat` follows the terminal's light/dark background. Set
+`BBCHAT_THEME=light` or `BBCHAT_THEME=dark` to force a palette when the terminal doesn't
 report one.
 
-- `autoStart` defaults to `false` — `vch` will not launch BB unless you opt in.
-- Point `serverUrl` / `startCommand` at an official install or a local dev build; `vch` treats them identically.
+- `autoStart` defaults to `false` — `bbchat` will not launch BB unless you opt in.
+- Point `serverUrl` / `startCommand` at an official install or a local dev build; `bbchat` treats them identically.
 
 ## Development
 
 ```
 bun install
-bun run typecheck       # tsc --noEmit (TypeScript 7)
+bun run check           # typecheck + lint + test — the same gate CI runs
+bun run typecheck       # tsc --noEmit (TypeScript 7, strict)
 bun run lint            # biome check
+bun run lint:fix        # biome check --write (formatting + import order)
 bun test
 bun run dev             # run from source
-bun run build:binaries  # standalone binary for the current platform → dist/
+bun run build:binary    # standalone binary → dist/bbchat
+bun run build:binaries  # platform-suffixed binary → dist/bbchat-<os>-<arch>
 ```
 
+Bun is the only supported toolchain — no npm/pnpm/yarn lockfiles (they're
+gitignored; a second lockfile resolves a different tree than CI's
+`bun install --frozen-lockfile`).
+
 Toolchain: Bun · TypeScript 7 · Biome · `@opentui/core` · `bb-app` SDK. CI runs
-typecheck + lint + tests, then builds the standalone binary and runs
-`vch selfcheck` on it (proving the embedded tree-sitter grammars highlight with
-the network blocked). Tagged releases build per-platform binaries, run the same
-selfcheck on each, and publish to npm.
+typecheck + lint + tests and shellcheck, then compiles the standalone binary on
+Linux and macOS and runs `bbchat selfcheck` on each (proving the embedded
+tree-sitter grammars highlight with the network blocked — something `bun test`
+structurally cannot catch). Tagged releases verify the tag matches
+`package.json`, build per-platform binaries with checksums, run the same
+selfcheck on each, and publish to npm with provenance.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for conventions and the release process,
+and [SECURITY.md](SECURITY.md) for the threat model — this client renders
+untrusted, model-authored content into a terminal, and two modules
+(`src/tui/sanitize.ts`, `src/tui/markdown-safety.ts`) exist entirely to make
+that safe.
+
+## License
+
+[MIT](LICENSE)
