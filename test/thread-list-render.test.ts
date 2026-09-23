@@ -23,6 +23,23 @@ describe("renderThreadList", () => {
     expect(rows[0]?.attention).toBe(true);
   });
 
+  test("drops archived, deleted and hidden threads", () => {
+    const rows = renderThreadList([
+      {
+        id: "live",
+        title: "live",
+        status: "idle",
+        updatedAt: 4,
+        archivedAt: null,
+        deletedAt: null,
+      },
+      { id: "arch", title: "archived", status: "idle", updatedAt: 3, archivedAt: 1700000000000 },
+      { id: "del", title: "deleted", status: "idle", updatedAt: 2, deletedAt: 1700000000000 },
+      { id: "hid", title: "hidden", status: "idle", updatedAt: 1, visibility: "hidden" },
+    ]);
+    expect(rows.map((r) => r.id)).toEqual(["live"]);
+  });
+
   test("skips entries without an id", () => {
     expect(renderThreadList([{ title: "no id" }, null, "x"])).toEqual([]);
   });

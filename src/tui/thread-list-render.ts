@@ -1,7 +1,8 @@
 /**
  * Maps BB thread-list entries (`ThreadListResponse`) into compact rows for the
  * terminal thread list. Structural/defensive (D2): tolerant of missing fields,
- * newest first, with a title fallback.
+ * newest first, with a title fallback. Archived, deleted and hidden threads are
+ * dropped — the BB app doesn't show them in its thread list either.
  */
 
 export interface ThreadRow {
@@ -18,6 +19,8 @@ function toRow(entry: unknown): ThreadRow | null {
   const rec = entry as Record<string, unknown>;
   const id = typeof rec.id === "string" ? rec.id : null;
   if (!id) return null;
+  if (typeof rec.archivedAt === "number" || typeof rec.deletedAt === "number") return null;
+  if (rec.visibility === "hidden") return null;
   const title =
     (typeof rec.title === "string" && rec.title.length > 0 && rec.title) ||
     (typeof rec.titleFallback === "string" && rec.titleFallback.length > 0 && rec.titleFallback) ||

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { toThreadMeta } from "../src/bb/threads.ts";
+import type { BBSdk } from "../src/bb/sdk.ts";
+import { listThreads, toThreadMeta } from "../src/bb/threads.ts";
 
 describe("toThreadMeta", () => {
   test("maps title, provider, runtime status and branch", () => {
@@ -38,5 +39,22 @@ describe("toThreadMeta", () => {
       busy: false,
     });
     expect(toThreadMeta({ runtime: "nope", title: 42 }).title).toBeNull();
+  });
+});
+
+describe("listThreads", () => {
+  test("asks the server for non-archived threads only", async () => {
+    let query: Record<string, unknown> = {};
+    const sdk = {
+      threads: {
+        list: async (q: Record<string, unknown>) => {
+          query = q;
+          return [];
+        },
+      },
+    } as unknown as BBSdk;
+    await listThreads(sdk, "prj_1");
+    expect(query.projectId).toBe("prj_1");
+    expect(query.archived).toBe(false);
   });
 });

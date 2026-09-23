@@ -3,13 +3,17 @@ import type { BBSdk } from "./sdk.ts";
 /** Unsubscribe handle returned by the realtime watchers. */
 export type Unsubscribe = () => void;
 
-/** List a project's threads (newest data; caller normalizes/sorts for display). */
+/**
+ * List a project's active threads (caller normalizes/sorts for display). Archived
+ * threads are excluded server-side, matching the BB app's thread list; the
+ * display mapper also drops archived/deleted/hidden rows as a safety net.
+ */
 export function listThreads(
   sdk: BBSdk,
   projectId: string,
   signal?: AbortSignal,
 ): Promise<unknown[]> {
-  return sdk.threads.list({ projectId, signal }) as Promise<unknown[]>;
+  return sdk.threads.list({ projectId, archived: false, signal }) as Promise<unknown[]>;
 }
 
 /** Turns fetched per timeline page (the server-side maximum). */
