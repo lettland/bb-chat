@@ -9,6 +9,8 @@ version it cuts on the next push to `master`.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-23
+
 ### Changed
 
 - **Renamed the tool from `vch` to `bbchat`.** This is a breaking rename of every
@@ -52,4 +54,5 @@ ensure/health, project resolution, the global home, live thread list, streaming
 chat and composer, the spawn wizard, diff review, terminals, and plugin/skill
 listings.
 
-[Unreleased]: https://github.com/lettland/bb-chat/commits/master
+[Unreleased]: https://github.com/lettland/bb-chat/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/lettland/bb-chat/releases/tag/v0.1.0
