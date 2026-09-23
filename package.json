@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "BB in your terminal — a full TUI client for the BB coding-agent server.",
   "type": "module",
-  "license": "MIT",
+  "license": "BSD-2-Clause",
   "homepage": "https://github.com/lettland/bb-chat#readme",
   "repository": {
     "type": "git",

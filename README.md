@@ -2,7 +2,7 @@
 
 [![ci](https://github.com/lettland/bb-chat/actions/workflows/ci.yml/badge.svg)](https://github.com/lettland/bb-chat/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/bbchat.svg)](https://www.npmjs.com/package/bbchat)
-[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![license](https://img.shields.io/badge/license-BSD--2--Clause-blue.svg)](LICENSE)
 
 **BB in your terminal.** A full TUI client for the [BB](https://github.com/get-bb/bb) coding-agent server — the terminal equivalent of the BB desktop app. `cd` into a project, run `bbchat`, and you're in that project's threads: connect to (or start) BB, browse and open threads, pick providers, watch live agent activity, review diffs, attach terminals.
 
@@ -139,4 +139,4 @@ that safe.
 
 ## License
 
-[MIT](LICENSE)
+[BSD 2-Clause](LICENSE) © Valksor

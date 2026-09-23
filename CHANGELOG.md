@@ -26,7 +26,7 @@ the first release. Versioned sections start at `0.1.0`.
 
 ### Added
 
-- Project scaffold: `LICENSE` (MIT), `CONTRIBUTING.md`, `SECURITY.md`,
+- Project scaffold: `LICENSE` (BSD 2-Clause), `CONTRIBUTING.md`, `SECURITY.md`,
   `CODE_OF_CONDUCT.md`, `.editorconfig`, `.gitattributes`, issue and pull
   request templates, `CODEOWNERS`, and Dependabot updates for npm and GitHub
   Actions.
