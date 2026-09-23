@@ -20,6 +20,7 @@ export type Command =
   | { kind: "providers" }
   | { kind: "threads" }
   | { kind: "doctor" }
+  | { kind: "selfcheck" }
   | { kind: "help" }
   | { kind: "version" };
 
@@ -50,6 +51,7 @@ export function parseArgs(argv: string[]): Command {
   if (first === "-h" || first === "--help" || first === "help") return { kind: "help" };
   if (first === "-v" || first === "--version" || first === "version") return { kind: "version" };
   if (first === "doctor") return { kind: "doctor" };
+  if (first === "selfcheck") return { kind: "selfcheck" };
   if (first === "providers") return { kind: "providers" };
   if (first === "threads") return { kind: "threads" };
 

@@ -12,6 +12,12 @@ spawn wizard (provider → model → mode → prompt), diff review, terminals, a
 plugin/skill listings. The interactive views are typecheck-verified and their
 data layers checked against a live BB; broaden coverage as you use it.
 
+The thread view renders assistant replies as markdown with tree-sitter
+syntax-highlighted code fences (TypeScript, JavaScript, Zig, and markdown are
+bundled; other languages show as plain code), inline colored diffs for file
+edits, and a status bar with the thread's provider and status. Every
+screen shares one themed frame with dark and light palettes.
+
 ## Requirements
 
 - [Bun](https://bun.sh) ≥ 1.3
@@ -42,6 +48,7 @@ vch new ["prompt"]       Start a thread ([--provider][--model][--reasoning][--mo
 vch providers            List providers, models, reasoning levels, and modes
 vch init [--print]       Detect system-local BB, write an editable config
 vch doctor               Diagnose config + BB reachability
+vch selfcheck            Verify this build highlights markdown/code offline
 vch help | version
 ```
 
@@ -81,6 +88,10 @@ In-app keys: `↑/↓` move · `enter` open/select · `n` new thread · `p` plug
 
 Environment overrides: `VCH_SERVER_URL` / `BB_SERVER_URL`, `VCH_START_COMMAND`, `VCH_BB_COMMAND`, `VCH_AUTO_START`.
 
+Appearance: `vch` follows the terminal's light/dark background. Set
+`VCH_THEME=light` or `VCH_THEME=dark` to force a palette when the terminal doesn't
+report one.
+
 - `autoStart` defaults to `false` — `vch` will not launch BB unless you opt in.
 - Point `serverUrl` / `startCommand` at an official install or a local dev build; `vch` treats them identically.
 
@@ -96,5 +107,7 @@ bun run build:binaries  # standalone binary for the current platform → dist/
 ```
 
 Toolchain: Bun · TypeScript 7 · Biome · `@opentui/core` · `bb-app` SDK. CI runs
-typecheck + lint + tests; tagged releases build per-platform binaries and publish
-to npm.
+typecheck + lint + tests, then builds the standalone binary and runs
+`vch selfcheck` on it (proving the embedded tree-sitter grammars highlight with
+the network blocked). Tagged releases build per-platform binaries, run the same
+selfcheck on each, and publish to npm.

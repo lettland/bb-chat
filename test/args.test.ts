@@ -63,6 +63,10 @@ describe("parseArgs", () => {
     expect(parseArgs(["doctor"])).toEqual({ kind: "doctor" });
   });
 
+  test("selfcheck", () => {
+    expect(parseArgs(["selfcheck"])).toEqual({ kind: "selfcheck" });
+  });
+
   test("init flags", () => {
     expect(parseArgs(["init"])).toEqual({ kind: "init", yes: false, force: false, print: false });
     expect(parseArgs(["init", "--yes", "--force", "--print"])).toEqual({

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { BoxRenderable } from "@opentui/core";
 import { createTestRenderer } from "@opentui/core/testing";
 import { type Block, buildBlocks } from "../src/tui/timeline-model.ts";
@@ -9,8 +9,15 @@ import {
   reconcileBlocks,
 } from "../src/tui/views/blocks.ts";
 
+// Each headless renderer registers console listeners; destroy them so they don't pile up.
+const live: Awaited<ReturnType<typeof createTestRenderer>>[] = [];
+afterEach(() => {
+  for (const t of live.splice(0)) t.renderer.destroy();
+});
+
 async function setup() {
   const t = await createTestRenderer({ width: 80, height: 24 });
+  live.push(t);
   const container = new BoxRenderable(t.renderer, { flexDirection: "column" });
   t.renderer.root.add(container);
   return { t, container };
@@ -161,6 +168,37 @@ describe("mountBlock / reconcileBlocks", () => {
     const after = mounted.get("x1");
     expect(after?.kind).toBe("diff");
     expect(after).not.toBe(before); // destroyed + remounted, not applied
+    expect(after?.root).not.toBe(before?.root);
+  });
+
+  test("an assistant message with a blocked-scheme link renders verbatim, with a note", async () => {
+    const frame = await frameOf(
+      buildBlocks([
+        {
+          kind: "conversation",
+          role: "assistant",
+          id: "m1",
+          text: "see [docs](javascript:evil())",
+        },
+      ]),
+    );
+    expect(frame).toContain("[docs](javascript:evil())"); // the real target stays visible
+    expect(frame).toContain("blocked scheme");
+  });
+
+  test("a message that gains a blocked link mid-stream is remounted as plain text", async () => {
+    await frameOf(
+      buildBlocks([{ kind: "conversation", role: "assistant", id: "m1", text: "see [docs]" }]),
+    );
+    const before = mounted.get("m1");
+    expect(before?.variant).toBe("assistant-markdown");
+    await frameOf(
+      buildBlocks([
+        { kind: "conversation", role: "assistant", id: "m1", text: "see [docs](file:///etc)" },
+      ]),
+    );
+    const after = mounted.get("m1");
+    expect(after?.variant).toBe("assistant-plain");
     expect(after?.root).not.toBe(before?.root);
   });
 

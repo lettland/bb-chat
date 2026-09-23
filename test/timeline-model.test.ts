@@ -50,6 +50,18 @@ describe("buildBlocks — conversation", () => {
     );
     expect(block.text).toBe("hi there");
   });
+
+  test("an assistant message with a disallowed-scheme link renders as plain text", () => {
+    const blocks = buildBlocks([
+      { kind: "conversation", role: "user", text: "[x](file:///etc/passwd)" },
+      { kind: "conversation", role: "assistant", text: "see [docs](javascript:evil())" },
+      { kind: "conversation", role: "assistant", text: "see [docs](https://example.com)" },
+    ]) as MessageBlock[];
+    expect(at(blocks, 0).plain).toBe(false); // user text is never markdown anyway
+    expect(at(blocks, 1).plain).toBe(true);
+    expect(at(blocks, 1).text).toBe("see [docs](javascript:evil())"); // shown verbatim
+    expect(at(blocks, 2).plain).toBe(false);
+  });
 });
 
 describe("buildBlocks — work", () => {

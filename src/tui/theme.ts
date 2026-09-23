@@ -132,6 +132,27 @@ export function getThemeMode(): ThemeMode {
   return activeMode;
 }
 
+/** How long to wait for the terminal to report its light/dark background. */
+const THEME_DETECT_MS = 250;
+
+/**
+ * Decide the startup palette. An explicit `forced` value (`VCH_THEME=light|dark`)
+ * wins; otherwise ask the terminal, falling back to dark when it doesn't answer
+ * in time or the query fails. Resolved once — views take their colors when built,
+ * so switching later would not repaint what is already mounted.
+ */
+export async function resolveThemeMode(
+  renderer: { waitForThemeMode(timeoutMs?: number): Promise<ThemeMode | null> },
+  forced: string | undefined,
+): Promise<ThemeMode> {
+  if (forced === "light" || forced === "dark") return forced;
+  try {
+    return (await renderer.waitForThemeMode(THEME_DETECT_MS)) ?? "dark";
+  } catch {
+    return "dark";
+  }
+}
+
 /** The palette for the active (or an explicitly requested) terminal mode. */
 export function palette(mode: ThemeMode = activeMode): Palette {
   return PALETTES[mode];

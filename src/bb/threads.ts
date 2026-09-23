@@ -114,3 +114,47 @@ export function watchThread(sdk: BBSdk, threadId: string, onChange: () => void):
 export function watchProject(sdk: BBSdk, projectId: string, onChange: () => void): Unsubscribe {
   return sdk.subscribe({ event: "project:changed", projectId, callback: () => onChange() });
 }
+
+/** The bits of a thread record the thread view shows in its header and status bar. */
+export interface ThreadMeta {
+  title: string | null;
+  providerId: string | null;
+  model: string | null;
+  /** Runtime display status (e.g. "active", "idle"), falling back to the stored status. */
+  status: string | null;
+  branch: string | null;
+  /** True while the thread is working a turn — used to keep streaming markdown unstable. */
+  busy: boolean;
+}
+
+const BUSY_STATUSES = new Set(["active", "starting", "provisioning"]);
+
+function optStr(rec: Record<string, unknown>, key: string): string | null {
+  const value = rec[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/** Map a `threads.get` record into `ThreadMeta`. Structural/defensive (D2). */
+export function toThreadMeta(raw: unknown): ThreadMeta {
+  const rec = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const runtime =
+    rec.runtime && typeof rec.runtime === "object" ? (rec.runtime as Record<string, unknown>) : {};
+  const status = optStr(runtime, "displayStatus") ?? optStr(rec, "status");
+  return {
+    title: optStr(rec, "title") ?? optStr(rec, "titleFallback"),
+    providerId: optStr(rec, "providerId"),
+    model: optStr(rec, "model"),
+    status,
+    branch: optStr(rec, "environmentBranchName"),
+    busy: status !== null && BUSY_STATUSES.has(status),
+  };
+}
+
+/** Fetch a thread's header/status-bar metadata. */
+export async function getThreadMeta(
+  sdk: BBSdk,
+  threadId: string,
+  signal?: AbortSignal,
+): Promise<ThreadMeta> {
+  return toThreadMeta(await sdk.threads.get({ threadId, signal }));
+}

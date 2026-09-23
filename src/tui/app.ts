@@ -2,6 +2,7 @@ import { ensureProject } from "../bb/project.ts";
 import type { BBSdk } from "../bb/sdk.ts";
 import { Navigator } from "./navigator.ts";
 import type { SpawnPreset } from "./spawn-wizard.ts";
+import { resolveThemeMode, setThemeMode } from "./theme.ts";
 import { GlobalHomeView } from "./views/global-home-view.ts";
 import { MessageView } from "./views/message-view.ts";
 import { SpawnWizardView } from "./views/spawn-wizard-view.ts";
@@ -39,6 +40,8 @@ export async function runChat(ctx: ChatContext): Promise<void> {
   // here — we handle Ctrl-C ourselves via shutdown() below. useMouse enables
   // mouse-wheel scrolling in the transcript's ScrollBox.
   const renderer = await createCliRenderer({ exitOnCtrlC: false, useMouse: true });
+  // Pick the palette once, before any view mounts (views resolve colors when built).
+  setThemeMode(await resolveThemeMode(renderer, process.env.VCH_THEME));
 
   // Single, reliable termination path. Destroying the renderer restores the
   // terminal; process.exit then forces a clean quit — the realtime WebSocket and

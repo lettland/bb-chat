@@ -14,6 +14,7 @@
 import {
   BoxRenderable,
   bg,
+  bold,
   fg,
   getTreeSitterClient,
   MarkdownRenderable,
@@ -47,8 +48,22 @@ export interface BlockOpts {
 export interface MountedBlock {
   id: string;
   kind: Block["kind"];
+  /** Distinguishes structurally different renderings of one kind (see `variantOf`). */
+  variant: string;
   root: Renderable;
   apply(block: Block, opts: BlockOpts): void;
+}
+
+/**
+ * A mounted block can only be updated in place when it was built the same way.
+ * An assistant message renders as markdown or, when it holds an unsafe link, as
+ * plain text — different renderables, so switching between them remounts.
+ */
+export function variantOf(block: Block): string {
+  if (block.kind === "message" && block.role === "assistant") {
+    return block.plain ? "assistant-plain" : "assistant-markdown";
+  }
+  return block.kind === "message" ? "user" : "";
 }
 
 type Renderer = ConstructorParameters<typeof BoxRenderable>[0];
@@ -58,15 +73,26 @@ function chunk(text: string, fgColor: string, bgColor?: string): TextChunk {
   return fg(fgColor)(bgColor ? bg(bgColor)(text) : text);
 }
 
-/** Join per-line chunks into a StyledText (each line already ends with "\n"). */
+/**
+ * Join per-line chunks into a StyledText. Each line ends with "\n"; the final one
+ * is trimmed so a row doesn't render a trailing blank line.
+ */
 function styled(lines: TextChunk[]): StyledText {
-  return new StyledText(lines.length > 0 ? lines : [fg(toneColor("meta"))(" \n")]);
+  const last = lines[lines.length - 1];
+  if (!last) return new StyledText([fg(toneColor("meta"))(" ")]);
+  last.text = last.text.replace(/\n$/, "");
+  return new StyledText(lines);
 }
 
 // ── message ────────────────────────────────────────────────────────────────
 
+/** The card's role label (the card's left border is the gutter, so no glyph here). */
+function textOrSpace(text: string): string {
+  return text.length > 0 ? text : " ";
+}
+
 function roleHeader(role: "user" | "assistant"): string {
-  return `${glyph.gutter} ${role === "assistant" ? "assistant" : "you"}`;
+  return role === "assistant" ? "assistant" : "you";
 }
 
 function mountMessage(renderer: Renderer, block: MessageBlock): MountedBlock {
@@ -78,15 +104,41 @@ function mountMessage(renderer: Renderer, block: MessageBlock): MountedBlock {
     border: ["left"],
     borderColor: isAssistant ? p.border.assistant : p.border.user,
     paddingLeft: 1,
-    marginTop: block.newExchange ? 1 : 0,
+    // A gap opens each new exchange and separates a reply from its prompt.
+    marginTop: block.newExchange || isAssistant ? 1 : 0,
     backgroundColor: isAssistant ? p.surface.assistantCard : p.surface.userCard,
   });
   card.add(
     new TextRenderable(renderer, {
-      content: roleHeader(block.role),
-      fg: toneColor(isAssistant ? "assistant" : "user"),
+      content: new StyledText([
+        bold(fg(toneColor(isAssistant ? "assistant" : "user"))(roleHeader(block.role))),
+      ]),
     }),
   );
+
+  if (isAssistant && block.plain) {
+    // Shown verbatim (nothing clickable) because it links to a blocked scheme.
+    card.add(
+      new TextRenderable(renderer, {
+        content: "shown as plain text: contains a link with a blocked scheme",
+        fg: toneColor("attention"),
+      }),
+    );
+    const body = new TextRenderable(renderer, {
+      content: textOrSpace(block.text),
+      fg: toneColor("assistant"),
+    });
+    card.add(body);
+    return {
+      id: block.id,
+      kind: "message",
+      variant: variantOf(block),
+      root: card,
+      apply(next) {
+        body.content = textOrSpace((next as MessageBlock).text);
+      },
+    };
+  }
 
   if (isAssistant) {
     const md = new MarkdownRenderable(renderer, {
@@ -99,6 +151,7 @@ function mountMessage(renderer: Renderer, block: MessageBlock): MountedBlock {
     return {
       id: block.id,
       kind: "message",
+      variant: variantOf(block),
       root: card,
       apply(next) {
         const b = next as MessageBlock;
@@ -116,6 +169,7 @@ function mountMessage(renderer: Renderer, block: MessageBlock): MountedBlock {
   return {
     id: block.id,
     kind: "message",
+    variant: variantOf(block),
     root: card,
     apply(next) {
       const b = next as MessageBlock;
@@ -165,6 +219,7 @@ function mountWork(renderer: Renderer, block: WorkBlock, opts: BlockOpts): Mount
   return {
     id: block.id,
     kind: "work",
+    variant: variantOf(block),
     root: text,
     apply(next, o) {
       text.content = styled(workChunks(next as WorkBlock, o));
@@ -207,6 +262,7 @@ function mountDiff(renderer: Renderer, block: DiffBlock, opts: BlockOpts): Mount
   return {
     id: block.id,
     kind: "diff",
+    variant: variantOf(block),
     root: text,
     apply(next, o) {
       text.content = styled(diffChunks(next as DiffBlock, o));
@@ -228,6 +284,7 @@ function mountLine(renderer: Renderer, block: Block, text: string, color: string
   return {
     id: block.id,
     kind: block.kind,
+    variant: variantOf(block),
     root: node,
     apply(next) {
       if (next.kind === "system" || next.kind === "error") node.content = sanitizeText(next.text);
@@ -272,7 +329,7 @@ export function reconcileBlocks(
   for (const block of blocks) {
     const opts = optsFor(block);
     const existing = previous.get(block.id);
-    if (existing && existing.kind === block.kind) {
+    if (existing && existing.kind === block.kind && existing.variant === variantOf(block)) {
       existing.apply(block, opts);
       next.set(block.id, existing);
       ordered.push(existing);

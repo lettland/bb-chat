@@ -21,8 +21,14 @@ import {
   toProviderChoices,
   type WizardState,
 } from "../spawn-wizard.ts";
+import { palette, toneColor } from "../theme.ts";
 import { errorText } from "../util.ts";
+import { ListPanel, Screen } from "./chrome.ts";
 import { ThreadView } from "./thread-view.ts";
+
+const STEPS = ["provider", "model", "mode", "prompt"] as const;
+const SELECT_HINTS = "↑/↓ move · enter select · esc back";
+const PROMPT_HINTS = "type your first message · enter send · esc back";
 
 /**
  * Fast-forward a fresh wizard to the shorthand preset: fetch the preset provider's
@@ -53,10 +59,10 @@ export class SpawnWizardView implements View {
   readonly title = "new thread";
   private host!: ViewHost;
   private box: BoxRenderable | null = null;
-  private header: TextRenderable | null = null;
-  private body: TextRenderable | null = null;
-  private footer: TextRenderable | null = null;
-  private status: TextRenderable | null = null;
+  private screen: Screen | null = null;
+  private panel: ListPanel | null = null;
+  private promptBox: BoxRenderable | null = null;
+  private promptText: TextRenderable | null = null;
   private state: WizardState | null = null;
   private readonly input = new InputBuffer();
   private busy = false;
@@ -72,28 +78,39 @@ export class SpawnWizardView implements View {
 
   async mount(host: ViewHost): Promise<void> {
     this.host = host;
-    const box = new BoxRenderable(host.renderer, { flexDirection: "column", padding: 1, gap: 1 });
-    this.header = new TextRenderable(host.renderer, { content: "new thread" });
-    this.body = new TextRenderable(host.renderer, { content: "loading providers…" });
-    this.status = new TextRenderable(host.renderer, { content: "" });
-    this.footer = new TextRenderable(host.renderer, {
-      content: "↑/↓ move · enter select · esc back",
+    const p = palette();
+    const screen = new Screen(host.renderer, { title: "new thread", hints: SELECT_HINTS });
+    this.panel = new ListPanel(host.renderer);
+    this.panel.showMessage("loading providers…");
+    screen.content.add(this.panel.root);
+
+    // The prompt step's composer; hidden until the selection steps are done.
+    this.promptBox = new BoxRenderable(host.renderer, {
+      border: true,
+      borderStyle: "rounded",
+      borderColor: p.border.focus,
+      title: " first message ",
+      titleColor: toneColor("system"),
+      height: 3,
+      flexShrink: 0,
+      visible: false,
     });
-    box.add(this.header);
-    box.add(this.body);
-    box.add(this.status);
-    box.add(this.footer);
-    host.renderer.root.add(box);
-    this.box = box;
+    this.promptText = new TextRenderable(host.renderer, { content: "" });
+    this.promptBox.add(this.promptText);
+    screen.content.add(this.promptBox);
+
+    this.screen = screen;
+    this.box = screen.outer;
+    host.renderer.root.add(screen.outer);
 
     try {
       const providers = toProviderChoices(await listProviders(this.sdk));
       const seeded = await seedWizardPreset(this.sdk, initWizard(providers), this.preset);
       this.state = seeded.state;
-      if (seeded.error && this.status) this.status.content = seeded.error;
+      if (seeded.error) this.screen?.setStatus(seeded.error, "error");
       this.render();
     } catch (error) {
-      if (this.body) this.body.content = `error loading providers: ${errorText(error)}`;
+      this.panel?.showMessage(`error loading providers: ${errorText(error)}`, "error");
     }
   }
 
@@ -103,6 +120,10 @@ export class SpawnWizardView implements View {
       this.box.destroy();
       this.box = null;
     }
+    this.screen = null;
+    this.panel = null;
+    this.promptBox = null;
+    this.promptText = null;
   }
 
   onKey(key: KeyEvent): void {
@@ -160,7 +181,7 @@ export class SpawnWizardView implements View {
         const models = toModelChoices(await listModels(this.sdk, choice.id));
         if (this.state) this.state = setModels(this.state, models);
       } catch (error) {
-        if (this.status) this.status.content = `error loading models: ${errorText(error)}`;
+        this.screen?.setStatus(`error loading models: ${errorText(error)}`, "error");
       }
       this.render();
     } else if (state.step === "model") {
@@ -175,7 +196,7 @@ export class SpawnWizardView implements View {
   private async submit(text: string): Promise<void> {
     if (text.trim().length === 0 || this.busy || !this.state) return;
     this.busy = true;
-    if (this.status) this.status.content = "creating thread…";
+    this.screen?.setStatus("creating thread…");
     try {
       const project = await this.resolveProjectId();
       const params = buildSpawnParams(setPrompt(this.state, text), project.id);
@@ -184,9 +205,9 @@ export class SpawnWizardView implements View {
         await this.host.navigator.replace(new ThreadView(this.sdk, threadId, "new thread"));
         return;
       }
-      if (this.status) this.status.content = "spawn returned no thread id";
+      this.screen?.setStatus("spawn returned no thread id", "error");
     } catch (error) {
-      if (this.status) this.status.content = `spawn failed: ${errorText(error)}`;
+      this.screen?.setStatus(`spawn failed: ${errorText(error)}`, "error");
     } finally {
       this.busy = false;
     }
@@ -194,29 +215,38 @@ export class SpawnWizardView implements View {
 
   private render(): void {
     const state = this.state;
-    if (!state || !this.header || !this.body || !this.footer) return;
+    const { screen, panel, promptBox, promptText } = this;
+    if (!state || !screen || !panel || !promptBox || !promptText) return;
 
-    const summary = [
-      state.provider ? `provider ${state.provider.label}` : null,
-      state.model ? `model ${state.model.label}` : null,
-      state.reasoning ? `reasoning ${state.reasoning}` : null,
-      state.mode ? `mode ${state.mode}` : null,
-    ]
-      .filter((s): s is string => s !== null)
-      .join("  ·  ");
-    this.header.content = `new thread — ${state.step}${summary ? `   [${summary}]` : ""}`;
+    const stepNo = STEPS.indexOf(state.step) + 1;
+    screen.setTitle("new thread", `step ${stepNo}/${STEPS.length} · ${state.step}`);
+    screen.setContext([
+      state.provider?.label ?? "",
+      state.model?.label ?? "",
+      state.reasoning ?? "",
+      state.mode ?? "",
+    ]);
 
     if (state.step === "prompt") {
-      this.body.content = `> ${state.prompt}`;
-      this.footer.content = "type your first message · enter send · esc back";
+      panel.root.visible = false;
+      promptBox.visible = true;
+      promptText.content = `❯ ${state.prompt}`;
+      screen.setHints(PROMPT_HINTS);
       return;
     }
 
+    panel.root.visible = true;
+    promptBox.visible = false;
+    screen.setHints(SELECT_HINTS);
     const choices = stepChoices(state);
-    this.body.content =
-      choices.length === 0
-        ? "loading…"
-        : choices.map((c, i) => `${i === state.cursor ? ">" : " "} ${c.label}`).join("\n");
-    this.footer.content = "↑/↓ move · enter select · esc back";
+    if (choices.length === 0) {
+      panel.showMessage("loading…");
+      return;
+    }
+    panel.setItems(
+      choices.map((c) => c.label),
+      "nothing to choose",
+      state.cursor,
+    );
   }
 }

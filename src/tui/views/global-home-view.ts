@@ -1,11 +1,17 @@
-import { BoxRenderable, type KeyEvent, TextRenderable } from "@opentui/core";
+import type { BoxRenderable, KeyEvent } from "@opentui/core";
 import { listProjects } from "../../bb/project.ts";
 import type { BBSdk } from "../../bb/sdk.ts";
 import type { View, ViewHost } from "../navigator.ts";
 import { formatProjectRow, type ProjectRow, toProjectRows } from "../project-list-render.ts";
-import { clamp, errorText } from "../util.ts";
+import { errorText } from "../util.ts";
+import { ListPanel, Screen } from "./chrome.ts";
 import { PluginsView } from "./plugins-view.ts";
 import { ThreadListView } from "./thread-list-view.ts";
+
+/** Hints, most important first (narrow terminals drop from the end). */
+function hints(isRoot: boolean): string {
+  return `↑/↓ move · enter open · ${isRoot ? "q quit" : "q back"} · p plugins · r refresh`;
+}
 
 /**
  * Global home (`vch -g`): every project the user can see, newest counts. Enter
@@ -15,25 +21,28 @@ export class GlobalHomeView implements View {
   readonly title = "projects";
   private host!: ViewHost;
   private box: BoxRenderable | null = null;
-  private body: TextRenderable | null = null;
+  private screen: Screen | null = null;
+  private panel: ListPanel | null = null;
   private rows: ProjectRow[] = [];
   private selected = 0;
+  /** Bumped on mount/unmount so a fetch from a previous mount can't paint this one. */
+  private generation = 0;
 
   constructor(private readonly sdk: BBSdk) {}
 
   async mount(host: ViewHost): Promise<void> {
     this.host = host;
-    const box = new BoxRenderable(host.renderer, { flexDirection: "column", padding: 1, gap: 1 });
-    box.add(new TextRenderable(host.renderer, { content: "vch — all projects" }));
-    this.body = new TextRenderable(host.renderer, { content: "loading…" });
-    box.add(this.body);
-    box.add(
-      new TextRenderable(host.renderer, {
-        content: "↑/↓ move · enter open · p plugins · r refresh · q quit",
-      }),
-    );
-    host.renderer.root.add(box);
-    this.box = box;
+    this.generation += 1;
+    const screen = new Screen(host.renderer, {
+      title: "all projects",
+      hints: hints(host.navigator.depth <= 1),
+      wordmark: true,
+    });
+    this.panel = new ListPanel(host.renderer);
+    screen.content.add(this.panel.root);
+    this.screen = screen;
+    this.box = screen.outer;
+    host.renderer.root.add(screen.outer);
     await this.refresh();
   }
 
@@ -43,6 +52,9 @@ export class GlobalHomeView implements View {
       this.box.destroy();
       this.box = null;
     }
+    this.screen = null;
+    this.panel = null;
+    this.generation += 1;
   }
 
   onKey(key: KeyEvent): void {
@@ -75,9 +87,8 @@ export class GlobalHomeView implements View {
   }
 
   private move(delta: number): void {
-    if (this.rows.length === 0) return;
-    this.selected = clamp(this.selected + delta, 0, this.rows.length - 1);
-    this.renderBody();
+    if (!this.panel || this.rows.length === 0) return;
+    this.selected = this.panel.select(this.selected + delta);
   }
 
   private open(): void {
@@ -88,23 +99,21 @@ export class GlobalHomeView implements View {
   }
 
   private async refresh(): Promise<void> {
-    if (!this.body) return;
+    if (!this.panel) return;
+    const generation = this.generation;
     try {
-      this.rows = toProjectRows(await listProjects(this.sdk));
-      this.selected = clamp(this.selected, 0, Math.max(0, this.rows.length - 1));
-      this.renderBody();
+      const rows = toProjectRows(await listProjects(this.sdk));
+      if (generation !== this.generation || !this.panel) return; // left or remounted mid-fetch
+      this.rows = rows;
+      this.selected = this.panel.setItems(
+        rows.map(formatProjectRow),
+        "no projects yet",
+        this.selected,
+      );
+      this.screen?.setContext([`${rows.length} project${rows.length === 1 ? "" : "s"}`]);
     } catch (error) {
-      this.body.content = `error loading projects: ${errorText(error)}`;
+      if (generation !== this.generation) return;
+      this.panel?.showMessage(`error loading projects: ${errorText(error)}`, "error");
     }
-  }
-
-  private renderBody(): void {
-    if (!this.body) return;
-    this.body.content =
-      this.rows.length === 0
-        ? "no projects yet"
-        : this.rows
-            .map((row, i) => `${i === this.selected ? ">" : " "} ${formatProjectRow(row)}`)
-            .join("\n");
   }
 }

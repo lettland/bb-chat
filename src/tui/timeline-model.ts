@@ -11,6 +11,7 @@
  * through `sanitizeText` here so no escape sequence reaches a renderable.
  */
 
+import { hasUnsafeLink } from "./markdown-safety.ts";
 import { sanitizeText } from "./sanitize.ts";
 import {
   ATTENTION_WORK_KINDS,
@@ -38,6 +39,12 @@ export interface MessageBlock {
   streaming: boolean;
   /** True when `text` was capped for size; the body carries a truncation notice. */
   truncated: boolean;
+  /**
+   * Render as plain text instead of markdown: an assistant message containing a
+   * link to a non-http(s)/mailto target is shown verbatim so nothing is clickable
+   * (see `markdown-safety.ts`). Always false for user messages (never markdown).
+   */
+  plain: boolean;
 }
 
 /** A tool/command call with its output (collapsible). */
@@ -134,10 +141,21 @@ interface BuildState {
 function buildConversation(rec: Record<string, unknown>, state: BuildState): void {
   const role: "user" | "assistant" = rec.role === "assistant" ? "assistant" : "user";
   const newExchange = role === "user" && state.out.length > 0;
-  const raw = sanitizeText(str(rec, "text"));
-  const { text, truncated } = capText(raw, state.maxMessageChars);
+  const { text, truncated } = capText(sanitizeText(str(rec, "text")), state.maxMessageChars);
+  // Assistant prose renders as markdown with clickable links; any link to a
+  // non-http(s)/mailto target downgrades the whole message to plain text.
+  const plain = role === "assistant" && hasUnsafeLink(text);
   const id = makeId(str(rec, "id"), "message", state.ordinal, state.seen);
-  state.out.push({ kind: "message", id, role, text, newExchange, streaming: false, truncated });
+  state.out.push({
+    kind: "message",
+    id,
+    role,
+    text,
+    newExchange,
+    streaming: false,
+    truncated,
+    plain,
+  });
 }
 
 function buildDiff(

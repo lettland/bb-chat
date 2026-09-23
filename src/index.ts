@@ -8,6 +8,7 @@ import { runDoctor } from "./cli/doctor.ts";
 import { runInit } from "./cli/init.ts";
 import { assessPrompt } from "./cli/prompt-guard.ts";
 import { runProviders } from "./cli/providers.ts";
+import { runSelfcheck } from "./cli/selfcheck.ts";
 import { resolveSpawnShorthand } from "./cli/shorthand.ts";
 import { runThreads } from "./cli/threads.ts";
 import { resolveConfig } from "./config.ts";
@@ -61,10 +62,12 @@ Usage:
   vch providers           List providers, models, reasoning levels, and modes
   vch init [--yes] [--force] [--print]   Detect system-local BB, write editable config
   vch doctor              Diagnose config + BB reachability
+  vch selfcheck           Verify offline markdown/code highlighting in this build
   vch help | version
 
 Configuration (~/.config/vch/config.json, overridable by env):
   VCH_SERVER_URL / BB_SERVER_URL, VCH_START_COMMAND, VCH_BB_COMMAND, VCH_AUTO_START
+  VCH_THEME=light|dark    Force the palette (default: follow the terminal's background)
 `;
 
 async function runChatCommand(
@@ -233,6 +236,8 @@ async function main(): Promise<number> {
       return runInit(command);
     case "doctor":
       return runDoctor();
+    case "selfcheck":
+      return runSelfcheck();
     case "providers":
       return runProviders();
     case "threads":

@@ -1,17 +1,19 @@
-import { BoxRenderable, type KeyEvent, TextRenderable } from "@opentui/core";
+import type { BoxRenderable, KeyEvent } from "@opentui/core";
 import { listSkills } from "../../bb/extensions.ts";
 import type { BBSdk } from "../../bb/sdk.ts";
-import { formatSkillRow, type SkillRow, toSkillRows } from "../extension-render.ts";
+import { formatSkillRow, toSkillRows } from "../extension-render.ts";
 import type { View, ViewHost } from "../navigator.ts";
 import { errorText } from "../util.ts";
+import { ListPanel, Screen } from "./chrome.ts";
 
-/** Skills available in a project (read-only listing). */
+/** Skills available in a project (read-only listing; ↑/↓ scroll long lists). */
 export class SkillsView implements View {
   readonly title = "skills";
   private host!: ViewHost;
   private box: BoxRenderable | null = null;
-  private body: TextRenderable | null = null;
-  private rows: SkillRow[] = [];
+  private screen: Screen | null = null;
+  private panel: ListPanel | null = null;
+  private selected = 0;
 
   constructor(
     private readonly sdk: BBSdk,
@@ -20,13 +22,15 @@ export class SkillsView implements View {
 
   async mount(host: ViewHost): Promise<void> {
     this.host = host;
-    const box = new BoxRenderable(host.renderer, { flexDirection: "column", padding: 1, gap: 1 });
-    box.add(new TextRenderable(host.renderer, { content: "skills" }));
-    this.body = new TextRenderable(host.renderer, { content: "loading…" });
-    box.add(this.body);
-    box.add(new TextRenderable(host.renderer, { content: "r refresh · q back" }));
-    host.renderer.root.add(box);
-    this.box = box;
+    const screen = new Screen(host.renderer, {
+      title: "skills",
+      hints: "↑/↓ scroll · r refresh · q back",
+    });
+    this.panel = new ListPanel(host.renderer);
+    screen.content.add(this.panel.root);
+    this.screen = screen;
+    this.box = screen.outer;
+    host.renderer.root.add(screen.outer);
     await this.refresh();
   }
 
@@ -36,6 +40,8 @@ export class SkillsView implements View {
       this.box.destroy();
       this.box = null;
     }
+    this.screen = null;
+    this.panel = null;
   }
 
   onKey(key: KeyEvent): void {
@@ -43,17 +49,26 @@ export class SkillsView implements View {
       void this.host.navigator.pop();
     } else if (key.name === "r") {
       void this.refresh();
+    } else if (key.name === "up" || key.name === "k") {
+      if (this.panel) this.selected = this.panel.select(this.selected - 1);
+    } else if (key.name === "down" || key.name === "j") {
+      if (this.panel) this.selected = this.panel.select(this.selected + 1);
     }
   }
 
   private async refresh(): Promise<void> {
-    if (!this.body) return;
+    if (!this.panel) return;
     try {
-      this.rows = toSkillRows(await listSkills(this.sdk, this.projectId));
-      this.body.content =
-        this.rows.length === 0 ? "no skills available" : this.rows.map(formatSkillRow).join("\n");
+      const rows = toSkillRows(await listSkills(this.sdk, this.projectId));
+      if (!this.panel) return; // left the view mid-fetch
+      this.selected = this.panel.setItems(
+        rows.map(formatSkillRow),
+        "no skills available",
+        this.selected,
+      );
+      this.screen?.setContext([`${rows.length} skill${rows.length === 1 ? "" : "s"}`]);
     } catch (error) {
-      this.body.content = `error loading skills: ${errorText(error)}`;
+      this.panel?.showMessage(`error loading skills: ${errorText(error)}`, "error");
     }
   }
 }

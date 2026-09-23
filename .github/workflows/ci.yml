@@ -17,3 +17,8 @@ jobs:
       - run: bun run typecheck
       - run: bun run lint
       - run: bun test
+      # The transcript's markdown/code highlighting relies on tree-sitter grammars
+      # that `bun build --compile` embeds. Build the real binary and prove it still
+      # highlights offline, so a broken embed fails CI instead of shipping.
+      - run: bun run build:binary
+      - run: ./dist/vch selfcheck

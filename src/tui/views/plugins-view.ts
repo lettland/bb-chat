@@ -1,9 +1,10 @@
-import { BoxRenderable, type KeyEvent, TextRenderable } from "@opentui/core";
+import type { BoxRenderable, KeyEvent } from "@opentui/core";
 import { listPlugins } from "../../bb/extensions.ts";
 import type { BBSdk } from "../../bb/sdk.ts";
-import { formatPluginRow, type PluginRow, toPluginRows } from "../extension-render.ts";
+import { formatPluginRow, toPluginRows } from "../extension-render.ts";
 import type { View, ViewHost } from "../navigator.ts";
 import { errorText } from "../util.ts";
+import { ListPanel, Screen } from "./chrome.ts";
 
 /**
  * Installed plugins (● enabled / ○ disabled). Read-only listing: a plugin's
@@ -14,24 +15,24 @@ export class PluginsView implements View {
   readonly title = "plugins";
   private host!: ViewHost;
   private box: BoxRenderable | null = null;
-  private body: TextRenderable | null = null;
-  private rows: PluginRow[] = [];
+  private screen: Screen | null = null;
+  private panel: ListPanel | null = null;
+  private selected = 0;
 
   constructor(private readonly sdk: BBSdk) {}
 
   async mount(host: ViewHost): Promise<void> {
     this.host = host;
-    const box = new BoxRenderable(host.renderer, { flexDirection: "column", padding: 1, gap: 1 });
-    box.add(new TextRenderable(host.renderer, { content: "plugins" }));
-    this.body = new TextRenderable(host.renderer, { content: "loading…" });
-    box.add(this.body);
-    box.add(
-      new TextRenderable(host.renderer, {
-        content: "graphical panels open in the BB app · r refresh · q back",
-      }),
-    );
-    host.renderer.root.add(box);
-    this.box = box;
+    const screen = new Screen(host.renderer, {
+      title: "plugins",
+      subtitle: "graphical panels open in the BB app",
+      hints: "↑/↓ scroll · r refresh · q back",
+    });
+    this.panel = new ListPanel(host.renderer);
+    screen.content.add(this.panel.root);
+    this.screen = screen;
+    this.box = screen.outer;
+    host.renderer.root.add(screen.outer);
     await this.refresh();
   }
 
@@ -41,6 +42,8 @@ export class PluginsView implements View {
       this.box.destroy();
       this.box = null;
     }
+    this.screen = null;
+    this.panel = null;
   }
 
   onKey(key: KeyEvent): void {
@@ -48,17 +51,27 @@ export class PluginsView implements View {
       void this.host.navigator.pop();
     } else if (key.name === "r") {
       void this.refresh();
+    } else if (key.name === "up" || key.name === "k") {
+      if (this.panel) this.selected = this.panel.select(this.selected - 1);
+    } else if (key.name === "down" || key.name === "j") {
+      if (this.panel) this.selected = this.panel.select(this.selected + 1);
     }
   }
 
   private async refresh(): Promise<void> {
-    if (!this.body) return;
+    if (!this.panel) return;
     try {
-      this.rows = toPluginRows(await listPlugins(this.sdk));
-      this.body.content =
-        this.rows.length === 0 ? "no plugins installed" : this.rows.map(formatPluginRow).join("\n");
+      const rows = toPluginRows(await listPlugins(this.sdk));
+      if (!this.panel) return; // left the view mid-fetch
+      this.selected = this.panel.setItems(
+        rows.map(formatPluginRow),
+        "no plugins installed",
+        this.selected,
+      );
+      const enabled = rows.filter((r) => r.enabled).length;
+      this.screen?.setContext([`${rows.length} installed`, `${enabled} enabled`]);
     } catch (error) {
-      this.body.content = `error loading plugins: ${errorText(error)}`;
+      this.panel?.showMessage(`error loading plugins: ${errorText(error)}`, "error");
     }
   }
 }

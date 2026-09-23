@@ -1,69 +1,83 @@
 import { BoxRenderable, type KeyEvent, ScrollBoxRenderable, TextRenderable } from "@opentui/core";
 import type { BBSdk } from "../../bb/sdk.ts";
-import { getTimelineRows, sendText, type Unsubscribe, watchThread } from "../../bb/threads.ts";
+import {
+  getThreadMeta,
+  getTimelineRows,
+  sendText,
+  type ThreadMeta,
+  type Unsubscribe,
+  watchThread,
+} from "../../bb/threads.ts";
 import { InputBuffer } from "../input-buffer.ts";
 import type { View, ViewHost } from "../navigator.ts";
-import { sanitizeText } from "../sanitize.ts";
-import { toneColor } from "../theme.ts";
+import { palette, toneColor } from "../theme.ts";
 import { type Block, buildBlocks, isTimelineActive, selectableIds } from "../timeline-model.ts";
 import { ToolSelection } from "../tool-selection.ts";
 import { helpLegend } from "../transcript-style.ts";
 import { errorText, parseSlashCommand } from "../util.ts";
 import { type BlockOpts, type MountedBlock, reconcileBlocks } from "./blocks.ts";
+import { Screen } from "./chrome.ts";
 import { DiffView } from "./diff-view.ts";
 import { TerminalsView } from "./terminals-view.ts";
 
-const HEADER_FG = toneColor("system");
-const COMPOSER_BORDER = toneColor("user");
 /** Cap on output/patch lines shown when a row is expanded. */
 const MAX_OUTPUT_LINES = 200;
+/** Hints, most important first (narrow terminals drop from the end). */
+function hints(isRoot: boolean): string {
+  return `tab select · ctrl+e expand · ${isRoot ? "esc quit" : "esc back"} · /help · ctrl+o diff · ctrl+t terms · ctrl+c quit`;
+}
 
 interface ThreadLayout {
-  outer: BoxRenderable;
+  screen: Screen;
   scrollbox: ScrollBoxRenderable;
   /** The column that holds one renderable per timeline block. */
   listBox: BoxRenderable;
-  status: TextRenderable;
   composer: TextRenderable;
 }
 
-/** Build the thread view's renderable tree: header, scrollable transcript, status, composer. */
-function buildThreadLayout(renderer: ViewHost["renderer"], title: string): ThreadLayout {
-  const outer = new BoxRenderable(renderer, { flexDirection: "column", height: "100%" });
-  outer.add(
-    new TextRenderable(renderer, {
-      content: ` ${title}   /help · tab+ctrl+e expand · esc back · ctrl+c quit`,
-      fg: HEADER_FG,
-    }),
-  );
+/** Build the thread view: themed header, scrollable transcript, composer, status bar. */
+function buildThreadLayout(
+  renderer: ViewHost["renderer"],
+  title: string,
+  isRoot: boolean,
+): ThreadLayout {
+  const p = palette();
+  const screen = new Screen(renderer, { title, hints: hints(isRoot) });
+  screen.setContext(["loading…"]);
 
   const scrollbox = new ScrollBoxRenderable(renderer, {
     flexGrow: 1,
     stickyScroll: true,
     stickyStart: "bottom",
-    contentOptions: { flexDirection: "column", paddingLeft: 1, paddingRight: 1 },
+    contentOptions: { flexDirection: "column" },
   });
   const listBox = new BoxRenderable(renderer, { flexDirection: "column" });
   scrollbox.add(listBox);
-  outer.add(scrollbox);
-
-  const status = new TextRenderable(renderer, { content: "", fg: toneColor("attention") });
-  outer.add(status);
+  screen.content.add(scrollbox);
 
   const composerBox = new BoxRenderable(renderer, {
     border: true,
     borderStyle: "rounded",
-    borderColor: COMPOSER_BORDER,
-    title: "message · /help",
+    borderColor: p.border.focus,
+    title: " message ",
+    titleColor: toneColor("system"),
     titleAlignment: "left",
+    bottomTitle: " enter send · /help ",
+    bottomTitleAlignment: "right",
     height: 3,
     flexShrink: 0,
   });
   const composer = new TextRenderable(renderer, { content: "" });
   composerBox.add(composer);
-  outer.add(composerBox);
+  screen.content.add(composerBox);
 
-  return { outer, scrollbox, listBox, status, composer };
+  return { screen, scrollbox, listBox, composer };
+}
+
+/** Status-bar context for a thread, most important first. */
+function threadContext(meta: ThreadMeta | null): string[] {
+  if (!meta) return [];
+  return [meta.providerId ?? "", meta.model ?? "", meta.status ?? ""];
 }
 
 /**
@@ -92,9 +106,9 @@ export class ThreadView implements View {
   readonly title = "thread";
   private host!: ViewHost;
   private box: BoxRenderable | null = null;
+  private screen: Screen | null = null;
   private scrollbox: ScrollBoxRenderable | null = null;
   private listBox: BoxRenderable | null = null;
-  private status: TextRenderable | null = null;
   private composer: TextRenderable | null = null;
   private readonly input = new InputBuffer();
   private unsub: Unsubscribe | null = null;
@@ -108,6 +122,8 @@ export class ThreadView implements View {
   /** Bumped on every mount/unmount; an in-flight refresh from an older generation
    *  discards its result rather than painting stale rows into a fresh mount. */
   private generation = 0;
+  /** Blocks from the last successful fetch, so cursor/expand changes re-render locally. */
+  private lastBlocks: Block[] | null = null;
 
   constructor(
     private readonly sdk: BBSdk,
@@ -118,13 +134,13 @@ export class ThreadView implements View {
   async mount(host: ViewHost): Promise<void> {
     this.host = host;
     this.generation += 1;
-    const layout = buildThreadLayout(host.renderer, this.threadTitle);
-    this.box = layout.outer;
+    const layout = buildThreadLayout(host.renderer, this.threadTitle, host.navigator.depth <= 1);
+    this.box = layout.screen.outer;
+    this.screen = layout.screen;
     this.scrollbox = layout.scrollbox;
     this.listBox = layout.listBox;
-    this.status = layout.status;
     this.composer = layout.composer;
-    host.renderer.root.add(layout.outer);
+    host.renderer.root.add(layout.screen.outer);
     this.renderComposer();
 
     await this.refresh();
@@ -146,6 +162,8 @@ export class ThreadView implements View {
     // in-flight flags makes any pending refresh discard its (now stale) result.
     this.mounted = new Map();
     this.listBox = null;
+    this.screen = null;
+    this.lastBlocks = null;
     this.generation += 1;
     this.refreshing = false;
     this.refreshQueued = false;
@@ -178,7 +196,7 @@ export class ThreadView implements View {
       void this.host.navigator.push(new TerminalsView(this.sdk, this.threadId));
     } else if (key.name === "tab") {
       this.tools.move(key.shift ? -1 : 1);
-      void this.refresh();
+      this.rerender();
     } else if (key.ctrl && key.name === "e") {
       this.toggleSelectedTool();
     } else {
@@ -189,8 +207,8 @@ export class ThreadView implements View {
 
   /** Expand/collapse the selected tool, or hint how to select one. */
   private toggleSelectedTool(): void {
-    if (this.tools.toggle()) void this.refresh();
-    else if (this.status) this.status.content = "select a tool with Tab, then Ctrl+E to expand";
+    if (this.tools.toggle()) this.rerender();
+    else this.screen?.setStatus("select a row with Tab, then Ctrl+E to expand");
   }
 
   /** Route navigation keys to the ScrollBox; returns true if the key scrolled. */
@@ -256,7 +274,7 @@ export class ThreadView implements View {
 
   /** Show the colored tone legend + expand keys in the status line. */
   private showHelp(): void {
-    if (this.status) this.status.content = helpLegend();
+    this.screen?.setStatus(helpLegend());
   }
 
   private async submit(text: string): Promise<void> {
@@ -270,13 +288,13 @@ export class ThreadView implements View {
     const trimmed = text.trim();
     if (trimmed.length === 0 || this.sending) return;
     this.sending = true;
-    if (this.status) this.status.content = "sending…";
+    this.screen?.setStatus("sending…");
     try {
       await sendText(this.sdk, this.threadId, trimmed);
-      if (this.status) this.status.content = "";
+      this.screen?.setStatus("");
       await this.refresh();
     } catch (error) {
-      if (this.status) this.status.content = sanitizeText(`send failed: ${errorText(error)}`);
+      this.screen?.setStatus(`send failed: ${errorText(error)}`, "error");
     } finally {
       this.sending = false;
     }
@@ -298,9 +316,17 @@ export class ThreadView implements View {
     // fetch is in flight, discard the result rather than paint stale rows.
     const generation = this.generation;
     try {
-      const rows = await getTimelineRows(this.sdk, this.threadId);
+      // Metadata only decorates the header/status bar, so its failure must not
+      // block the transcript.
+      const [rows, meta] = await Promise.all([
+        getTimelineRows(this.sdk, this.threadId),
+        getThreadMeta(this.sdk, this.threadId).catch(() => null),
+      ]);
       if (generation !== this.generation || !this.listBox) return;
-      const blocks = buildBlocks(rows, { streaming: isTimelineActive(rows) });
+      this.applyMeta(meta);
+      const streaming = isTimelineActive(rows) || meta?.busy === true;
+      const blocks = buildBlocks(rows, { streaming });
+      this.lastBlocks = blocks;
       this.tools.sync(selectableIds(blocks));
       this.renderBlocks(blocks);
       if (this.tools.selected) this.scrollToSelected();
@@ -316,6 +342,20 @@ export class ThreadView implements View {
       this.refreshQueued = false;
       void this.refresh();
     }
+  }
+
+  /** Header title/branch and status-bar context from the thread record. */
+  private applyMeta(meta: ThreadMeta | null): void {
+    if (!this.screen) return;
+    this.screen.setTitle(meta?.title ?? this.threadTitle, meta?.branch ?? undefined);
+    this.screen.setContext(meta ? threadContext(meta) : []);
+  }
+
+  /** Re-render the last fetched blocks after a local cursor/expand change (no refetch). */
+  private rerender(): void {
+    if (!this.lastBlocks) return;
+    this.renderBlocks(this.lastBlocks);
+    this.scrollToSelected();
   }
 
   /** Reconcile the block column to `blocks`, reusing renderables by id. */

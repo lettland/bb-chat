@@ -14,6 +14,8 @@ export function helpLegend(): StyledText {
     swatch("agent", "agent"),
     swatch("attention", "question"),
     swatch("error", "error"),
-    fg(toneColor("meta"))("· Tab select tool · Ctrl+E expand · /diff /terminals · esc back"),
+    fg(toneColor("meta"))(
+      "· Tab select tool · Ctrl+E expand · /diff /terminals · esc back · /exit or Ctrl+C quit",
+    ),
   ]);
 }

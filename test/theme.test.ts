@@ -7,6 +7,7 @@ import {
   getThemeMode,
   glyph,
   palette,
+  resolveThemeMode,
   setThemeMode,
   type ThemeMode,
   toneColor,
@@ -73,5 +74,27 @@ describe("glyphs", () => {
       expect(typeof value).toBe("string");
       expect(value.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("resolveThemeMode", () => {
+  const reporting = (mode: "light" | "dark" | null) => ({
+    waitForThemeMode: async () => mode,
+  });
+
+  test("an explicit VCH_THEME wins over the terminal", async () => {
+    expect(await resolveThemeMode(reporting("dark"), "light")).toBe("light");
+    expect(await resolveThemeMode(reporting("light"), "dark")).toBe("dark");
+  });
+
+  test("follows the terminal when not forced (invalid values are ignored)", async () => {
+    expect(await resolveThemeMode(reporting("light"), undefined)).toBe("light");
+    expect(await resolveThemeMode(reporting("light"), "solarized")).toBe("light");
+  });
+
+  test("falls back to dark when the terminal is silent or the query fails", async () => {
+    expect(await resolveThemeMode(reporting(null), undefined)).toBe("dark");
+    const failing = { waitForThemeMode: async () => Promise.reject(new Error("no tty")) };
+    expect(await resolveThemeMode(failing, undefined)).toBe("dark");
   });
 });
