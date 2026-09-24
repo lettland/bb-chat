@@ -27,6 +27,11 @@ export class InputBuffer {
     this.chars = [];
   }
 
+  /** Replace the text, e.g. to prefill an edit with the current value. */
+  set(value: string): void {
+    this.chars = [...value];
+  }
+
   /** Apply a key: Enter submits (and clears), Backspace deletes, printable chars append. */
   handle(key: KeyLike): InputAction {
     const name = key.name ?? "";

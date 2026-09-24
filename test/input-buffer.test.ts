@@ -17,6 +17,13 @@ describe("InputBuffer", () => {
     expect(buf.value).toBe("a b");
   });
 
+  test("set replaces the text, which then edits like typed input", () => {
+    const buf = new InputBuffer();
+    buf.set("work");
+    buf.handle({ name: "backspace" });
+    expect(buf.handle({ name: "s", sequence: "s" })).toEqual({ type: "update", value: "wors" });
+  });
+
   test("backspace removes the last character", () => {
     const buf = new InputBuffer();
     buf.handle({ name: "a", sequence: "a" });

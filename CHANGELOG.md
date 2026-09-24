@@ -9,6 +9,14 @@ version it cuts on the next push to `master`.
 
 ## [Unreleased]
 
+### Added
+
+- Project groups in the global home (`bbchat -g`): projects are listed under
+  the named, collapsible groups shared with the BB sidebar. `g` moves a project
+  into a group (existing or new) or out of one; on a group header `enter`
+  collapses it, `e` renames it, and `u` ungroups it. Groups are read from and
+  saved to BB's thread-list plugin, so both clients stay in sync.
+
 ## [0.1.2] - 2026-09-23
 
 ### Changed

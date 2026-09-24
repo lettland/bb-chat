@@ -84,6 +84,15 @@ In-app keys: `↑/↓` move · `enter` open/select · `n` new thread · `p` plug
 (global) / skills (project) · in a thread `ctrl+o` diff · `ctrl+t` terminals ·
 `esc`/`q` back · `ctrl+c` quit.
 
+**Project groups.** The global home gathers projects under the same named,
+collapsible groups as the BB sidebar (e.g. *work*, or a set of linked repos).
+They are stored in BB's thread-list plugin (`projectGroups`), so a group made in
+bbchat shows up in the BB app and vice versa. On a project, `g` moves it into an
+existing group, a new one, or out of its group; on a group header, `enter`
+collapses/expands it, `e` renames it, and `u` ungroups its projects. Groups sort
+by name among the ungrouped projects. A BB whose thread-list plugin has no
+project groups just shows the flat list.
+
 ## Configuration
 
 `bbchat` never assumes or auto-launches an official BB. What server it talks to — and how it's started if down — is entirely config-driven. `bbchat init` detects a system-local BB and writes an editable `~/.config/bbchat/config.json`:

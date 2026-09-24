@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatProjectRow, toProjectRows } from "../src/tui/project-list-render.ts";
+import { toProjectRows } from "../src/tui/project-list-render.ts";
 
 describe("toProjectRows", () => {
   test("sorts by name", () => {
@@ -14,11 +14,5 @@ describe("toProjectRows", () => {
   test("defaults the name and skips id-less entries", () => {
     const rows = toProjectRows([{ id: "p1" }, { name: "no id" }, null]);
     expect(rows).toEqual([{ id: "p1", name: "(unnamed)" }]);
-  });
-});
-
-describe("formatProjectRow", () => {
-  test("renders the project name", () => {
-    expect(formatProjectRow({ id: "p", name: "ci" })).toBe("ci");
   });
 });

@@ -35,8 +35,3 @@ export function toProjectRows(entries: readonly unknown[]): ProjectRow[] {
   rows.sort((a, b) => a.name.localeCompare(b.name));
   return rows;
 }
-
-/** One-line display string for a project row. */
-export function formatProjectRow(row: ProjectRow): string {
-  return row.name;
-}

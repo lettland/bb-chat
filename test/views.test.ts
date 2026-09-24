@@ -47,6 +47,11 @@ interface StubOptions {
   diffError?: Error;
   skillsError?: Error;
   pluginsError?: Error;
+  /** The thread-list plugin's preferences (mutated by writes); omit for a BB without groups. */
+  prefs?: Record<string, unknown>;
+  /** Fail the thread-list plugin's RPCs (reads and writes). */
+  rpcError?: Error;
+  projects?: unknown[];
 }
 
 /** A stub SDK covering the calls every view makes. */
@@ -92,10 +97,11 @@ function fakeSdk(o: StubOptions = {}): BBSdk {
       },
     },
     projects: {
-      list: async () => [
-        { id: "p1", name: "bbchat" },
-        { id: "p2", name: "ripwire" },
-      ],
+      list: async () =>
+        o.projects ?? [
+          { id: "p1", name: "bbchat" },
+          { id: "p2", name: "ripwire" },
+        ],
     },
     providers: {
       list: async () => {
@@ -127,6 +133,16 @@ function fakeSdk(o: StubOptions = {}): BBSdk {
             { id: "b", name: "bb-guide", enabled: false },
           ],
         };
+      },
+      callRpc: async (args: { method: string; input?: unknown }) => {
+        fail(o.rpcError);
+        const prefs = o.prefs ?? {};
+        if (args.method === "setPreference") {
+          const { key, value } = args.input as { key: string; value: unknown };
+          prefs[key] = value;
+          return { key, value };
+        }
+        return { preferences: { ...prefs } };
       },
     },
     terminals: {
@@ -270,6 +286,183 @@ describe("GlobalHomeView", () => {
     await eventually(app.t, () => app.navigator.current?.title === "threads");
     const threads = await app.shows("3 threads");
     expect(threads).toContain("q back"); // not the root any more
+  });
+});
+
+describe("GlobalHomeView project groups", () => {
+  const projects = [
+    { id: "p1", name: "bbchat" },
+    { id: "p2", name: "ripwire" },
+    { id: "p3", name: "aerotime" },
+  ];
+  const withGroups = () => ({
+    projectGroups: [{ id: "g1", name: "dev", projectIds: ["p3"] }],
+    collapsedProjectGroups: [] as string[],
+  });
+
+  test("shows groups with indented members; enter on a header folds it and saves that", async () => {
+    const app = await boot();
+    const prefs: Record<string, unknown> = withGroups();
+    await app.navigator.push(new GlobalHomeView(fakeSdk({ projects, prefs })));
+    const text = await app.shows("1 group");
+    expect(text).toContain("▾ dev (1)");
+    expect(text).toContain("    aerotime");
+    // Rows: bbchat, ▾ dev, aerotime, ripwire — move to the header.
+    app.press("j");
+    await app.shows("e rename");
+    app.press("return");
+    await app.shows("▸ dev (1)");
+    expect(await app.frame()).not.toContain("aerotime");
+    await eventually(app.t, () => (prefs.collapsedProjectGroups as string[]).includes("g1"));
+    app.press("return");
+    await app.shows("▾ dev (1)");
+    await eventually(app.t, () => (prefs.collapsedProjectGroups as string[]).length === 0);
+  });
+
+  test("g moves a project into an existing group, then home shows it there", async () => {
+    const app = await boot();
+    const prefs: Record<string, unknown> = withGroups();
+    await app.navigator.push(new GlobalHomeView(fakeSdk({ projects, prefs })));
+    await app.shows("1 group");
+    app.press("g"); // on bbchat
+    await eventually(app.t, () => app.navigator.current?.title === "project group");
+    const picker = await app.shows("+ new group…");
+    expect(picker).toContain("move to group");
+    expect(picker).toContain("ungrouped");
+    app.press("return"); // "dev" is the first choice
+    await eventually(app.t, () => app.navigator.current?.title === "projects");
+    await app.shows("▾ dev (2)");
+    expect(prefs.projectGroups).toEqual([{ id: "g1", name: "dev", projectIds: ["p3", "p1"] }]);
+  });
+
+  test("g → new group asks for a name; esc returns to the picker", async () => {
+    const app = await boot();
+    const prefs: Record<string, unknown> = withGroups();
+    await app.navigator.push(new GlobalHomeView(fakeSdk({ projects, prefs })));
+    await app.shows("1 group");
+    app.press("j");
+    app.press("j"); // aerotime, already in "dev"
+    app.press("g");
+    await app.shows("− remove from dev");
+    app.press("j"); // + new group…
+    app.press("return");
+    await app.shows("group name");
+    app.press("escape");
+    await app.shows("+ new group…");
+    app.press("return");
+    await app.shows("group name");
+    app.press("return"); // blank name is refused
+    await app.shows("a group needs a name");
+    app.type("linked");
+    app.press("return");
+    await eventually(app.t, () => app.navigator.current?.title === "projects");
+    await app.shows("▾ linked (1)");
+    const groups = prefs.projectGroups as { name: string; projectIds: string[] }[];
+    // "dev" lost its only project, so it is gone.
+    expect(groups.map((g) => [g.name, g.projectIds])).toEqual([["linked", ["p3"]]]);
+  });
+
+  test("remove from group ungroups the project", async () => {
+    const app = await boot();
+    const prefs: Record<string, unknown> = withGroups();
+    await app.navigator.push(new GlobalHomeView(fakeSdk({ projects, prefs })));
+    await app.shows("1 group");
+    app.press("j");
+    app.press("j");
+    app.press("g");
+    await app.shows("− remove from dev");
+    app.press("j");
+    app.press("j");
+    app.press("return");
+    await eventually(app.t, () => app.navigator.current?.title === "projects");
+    await eventually(app.t, () => (prefs.projectGroups as unknown[]).length === 0);
+    await eventually(app.t, () => !app.t.captureCharFrame().includes("dev"));
+  });
+
+  test("e renames a group (prefilled) and u ungroups it", async () => {
+    const app = await boot();
+    const prefs: Record<string, unknown> = withGroups();
+    await app.navigator.push(new GlobalHomeView(fakeSdk({ projects, prefs })));
+    await app.shows("1 group");
+    app.press("j");
+    app.press("e");
+    const rename = await app.shows("rename group");
+    expect(rename).toContain("❯ dev");
+    for (let i = 0; i < 3; i++) app.press("backspace");
+    app.type("job");
+    app.press("return");
+    await eventually(app.t, () => app.navigator.current?.title === "projects");
+    await app.shows("▾ job (1)");
+    app.press("u");
+    await eventually(app.t, () => (prefs.projectGroups as unknown[]).length === 0);
+    await eventually(app.t, () => !app.t.captureCharFrame().includes("job"));
+  });
+
+  test("esc leaves a rename without saving", async () => {
+    const app = await boot();
+    const prefs: Record<string, unknown> = withGroups();
+    await app.navigator.push(new GlobalHomeView(fakeSdk({ projects, prefs })));
+    await app.shows("1 group");
+    app.press("j");
+    app.press("e");
+    await app.shows("rename group");
+    app.type("x");
+    app.press("escape");
+    await eventually(app.t, () => app.navigator.current?.title === "projects");
+    expect(prefs.projectGroups).toEqual(withGroups().projectGroups);
+  });
+
+  test("a failed group read still lists projects, and g offers a retry", async () => {
+    const app = await boot();
+    await app.navigator.push(
+      new GlobalHomeView(fakeSdk({ projects, rpcError: new Error("plugin crashed") })),
+    );
+    await app.shows("error loading groups: plugin crashed");
+    expect(await app.shows("3 projects")).toContain("aerotime");
+    app.press("g");
+    await app.shows("project groups didn't load — press r to retry");
+  });
+
+  test("a failed save keeps the typed name and says why", async () => {
+    const app = await boot();
+    const prefs: Record<string, unknown> = withGroups();
+    const sdk = fakeSdk({ projects, prefs });
+    await app.navigator.push(new GlobalHomeView(sdk));
+    await app.shows("1 group");
+    app.press("j");
+    app.press("e");
+    await app.shows("rename group");
+    (sdk.plugins as unknown as { callRpc: () => Promise<never> }).callRpc = async () => {
+      throw new Error("offline");
+    };
+    app.type("x");
+    app.press("return");
+    const text = await app.shows("save failed: offline");
+    expect(text).toContain("❯ devx");
+    expect(app.navigator.current?.title).toBe("project group");
+  });
+
+  test("a group name from BB is sanitized in the rename box", async () => {
+    const app = await boot();
+    const prefs: Record<string, unknown> = {
+      projectGroups: [{ id: "g1", name: "dev\u001b[31mred", projectIds: ["p3"] }],
+      collapsedProjectGroups: [],
+    };
+    await app.navigator.push(new GlobalHomeView(fakeSdk({ projects, prefs })));
+    await app.shows("1 group");
+    app.press("j");
+    app.press("e");
+    const text = await app.shows("rename group");
+    expect(text).not.toContain("\u001b");
+  });
+
+  test("without project groups in BB the list is flat and g says why", async () => {
+    const app = await boot();
+    await app.navigator.push(new GlobalHomeView(fakeSdk({ projects })));
+    await app.shows("3 projects");
+    app.press("g");
+    await app.shows("project groups need a BB");
+    expect(app.navigator.current?.title).toBe("projects");
   });
 });
 
