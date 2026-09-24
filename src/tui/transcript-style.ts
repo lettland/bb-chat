@@ -6,6 +6,7 @@ import type { LineTone } from "./timeline-render.ts";
 export function helpLegend(): StyledText {
   const swatch = (tone: LineTone, label: string) => fg(toneColor(tone))(`${label}  `);
   return new StyledText([
+    fg(toneColor("meta"))("Ctrl+E expand · /actions · "),
     swatch("user", "you"),
     swatch("assistant", "assistant"),
     swatch("toolcall", "tool"),
@@ -14,8 +15,6 @@ export function helpLegend(): StyledText {
     swatch("agent", "agent"),
     swatch("attention", "question"),
     swatch("error", "error"),
-    fg(toneColor("meta"))(
-      "· Tab select tool · Ctrl+E expand · /diff /terminals · esc back · /exit or Ctrl+C quit",
-    ),
+    fg(toneColor("meta"))("· Tab select tool · /diff /terminals · esc back · /exit"),
   ]);
 }

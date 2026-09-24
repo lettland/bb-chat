@@ -10,6 +10,7 @@ import {
 } from "../../bb/threads.ts";
 import { InputBuffer } from "../input-buffer.ts";
 import type { View, ViewHost } from "../navigator.ts";
+import { REASONING_LEVELS } from "../spawn-wizard.ts";
 import { palette, toneColor } from "../theme.ts";
 import { type Block, buildBlocks, isTimelineActive, selectableIds } from "../timeline-model.ts";
 import { ToolSelection } from "../tool-selection.ts";
@@ -18,13 +19,16 @@ import { errorText, parseSlashCommand } from "../util.ts";
 import { type BlockOpts, type MountedBlock, reconcileBlocks } from "./blocks.ts";
 import { Screen } from "./chrome.ts";
 import { DiffView } from "./diff-view.ts";
+import { InteractionsView } from "./interactions-view.ts";
+import { MessageView } from "./message-view.ts";
+import { QueueView } from "./queue-view.ts";
 import { TerminalsView } from "./terminals-view.ts";
 
 /** Cap on output/patch lines shown when a row is expanded. */
 const MAX_OUTPUT_LINES = 200;
 /** Hints, most important first (narrow terminals drop from the end). */
 function hints(isRoot: boolean): string {
-  return `tab select · ctrl+e expand · ${isRoot ? "esc quit" : "esc back"} · /help · ctrl+o diff · ctrl+t terms · ctrl+c quit`;
+  return `tab select · ctrl+e expand · ${isRoot ? "esc quit" : "esc back"} · ctrl+i requests · ctrl+q queue · ctrl+o diff`;
 }
 
 interface ThreadLayout {
@@ -33,6 +37,7 @@ interface ThreadLayout {
   /** The column that holds one renderable per timeline block. */
   listBox: BoxRenderable;
   composer: TextRenderable;
+  composerBox: BoxRenderable;
 }
 
 /** Build the thread view: themed header, scrollable transcript, composer, status bar. */
@@ -62,7 +67,7 @@ function buildThreadLayout(
     title: " message ",
     titleColor: toneColor("system"),
     titleAlignment: "left",
-    bottomTitle: " enter send · /help ",
+    bottomTitle: " enter send · shift+enter newline · /help ",
     bottomTitleAlignment: "right",
     height: 3,
     flexShrink: 0,
@@ -71,7 +76,7 @@ function buildThreadLayout(
   composerBox.add(composer);
   screen.content.add(composerBox);
 
-  return { screen, scrollbox, listBox, composer };
+  return { screen, scrollbox, listBox, composer, composerBox };
 }
 
 /** Status-bar context for a thread, most important first. */
@@ -101,7 +106,21 @@ export class ThreadView implements View {
     "diff",
     "terminals",
     "term",
+    "interactions",
+    "requests",
+    "queued",
     "help",
+    "actions",
+    "stop",
+    "retry",
+    "compact",
+    "clear",
+    "cancel-plan",
+    "clear-goal",
+    "model",
+    "reasoning",
+    "queue",
+    "steer",
   ]);
   readonly title = "thread";
   private host!: ViewHost;
@@ -110,6 +129,7 @@ export class ThreadView implements View {
   private scrollbox: ScrollBoxRenderable | null = null;
   private listBox: BoxRenderable | null = null;
   private composer: TextRenderable | null = null;
+  private composerBox: BoxRenderable | null = null;
   private readonly input = new InputBuffer();
   private unsub: Unsubscribe | null = null;
   private sending = false;
@@ -140,6 +160,7 @@ export class ThreadView implements View {
     this.scrollbox = layout.scrollbox;
     this.listBox = layout.listBox;
     this.composer = layout.composer;
+    this.composerBox = layout.composerBox;
     host.renderer.root.add(layout.screen.outer);
     this.renderComposer();
 
@@ -162,6 +183,7 @@ export class ThreadView implements View {
     // in-flight flags makes any pending refresh discard its (now stale) result.
     this.mounted = new Map();
     this.listBox = null;
+    this.composerBox = null;
     this.screen = null;
     this.lastBlocks = null;
     this.generation += 1;
@@ -173,6 +195,7 @@ export class ThreadView implements View {
     if (this.handleShortcut(key)) return;
     if (this.handleScrollKey(key)) return;
 
+    if (this.sending) return;
     const action = this.input.handle(key);
     if (action.type === "submit") {
       void this.submit(action.value);
@@ -194,6 +217,10 @@ export class ThreadView implements View {
       void this.host.navigator.push(new DiffView(this.sdk, this.threadId));
     } else if (key.ctrl && key.name === "t") {
       void this.host.navigator.push(new TerminalsView(this.sdk, this.threadId));
+    } else if (key.ctrl && key.name === "i") {
+      void this.host.navigator.push(new InteractionsView(this.sdk, this.threadId));
+    } else if (key.ctrl && key.name === "q") {
+      void this.host.navigator.push(new QueueView(this.sdk, this.threadId));
     } else if (key.name === "tab") {
       this.tools.move(key.shift ? -1 : 1);
       this.rerender();
@@ -245,31 +272,88 @@ export class ThreadView implements View {
     if (this.scrollbox && id) this.scrollbox.scrollChildIntoView(id);
   }
 
-  private runCommand(name: string): void {
+  private async runCommand(name: string, args: string): Promise<string | null> {
     switch (name) {
       case "exit":
       case "quit":
       case "q":
         this.host.exit();
-        return;
+        return "";
       case "back":
         void this.host.navigator.pop();
-        return;
+        return "";
       case "diff":
         void this.host.navigator.push(new DiffView(this.sdk, this.threadId));
-        return;
+        return "";
       case "terminals":
       case "term":
         void this.host.navigator.push(new TerminalsView(this.sdk, this.threadId));
-        return;
-      default: // "help" and anything else routed here
+        return "";
+      case "interactions":
+      case "requests":
+        void this.host.navigator.push(new InteractionsView(this.sdk, this.threadId));
+        return "";
+      case "queued":
+        void this.host.navigator.push(new QueueView(this.sdk, this.threadId));
+        return "";
+      case "actions":
+        void this.host.navigator.push(
+          new MessageView("thread actions", [
+            "/requests: pending approvals, questions and forms",
+            "/queued: inspect, edit and dispatch queued messages",
+            "/stop · /retry · /compact · /clear · /cancel-plan · /clear-goal",
+            "/model <id> · /reasoning <level>",
+            "/queue <text> · /steer <text>",
+          ]),
+        );
+        return "";
+      case "stop":
+        await this.sdk.threads.stop({ threadId: this.threadId });
+        return "thread stopped";
+      case "retry":
+        await this.sdk.threads.retry({ threadId: this.threadId });
+        return "retry requested";
+      case "compact":
+        await this.sdk.threads.compact({ threadId: this.threadId });
+        return "compaction requested";
+      case "clear":
+        await this.sdk.threads.clearContext({ threadId: this.threadId });
+        return "context cleared";
+      case "cancel-plan":
+        await this.sdk.threads.cancelPlan({ threadId: this.threadId });
+        return "plan cancelled";
+      case "clear-goal":
+        await this.sdk.threads.clearGoal({ threadId: this.threadId });
+        return "goal cleared";
+      case "model":
+        if (!args) throw new Error("usage: /model <model id>");
+        await this.sdk.threads.update({ threadId: this.threadId, model: args });
+        return `model set to ${args}`;
+      case "reasoning":
+        if (!REASONING_LEVELS.some((level) => level === args))
+          throw new Error("usage: /reasoning <level>");
+        await this.sdk.threads.update({
+          threadId: this.threadId,
+          reasoningLevel: args as (typeof REASONING_LEVELS)[number],
+        });
+        return `reasoning set to ${args}`;
+      case "queue":
+      case "steer": {
+        if (!args) throw new Error(`usage: /${name} <text>`);
+        const mode = name === "queue" ? "queue-if-active" : "steer";
+        const result = await sendText(this.sdk, this.threadId, args, mode);
+        return result.delivery === "queued" ? "message queued" : "message sent";
+      }
+      default:
         this.showHelp();
-        return;
+        return null;
     }
   }
 
   private renderComposer(): void {
     if (this.composer) this.composer.content = `❯ ${this.input.value}`;
+    if (this.composerBox)
+      this.composerBox.height = Math.min(10, Math.max(3, this.input.value.split("\n").length + 2));
   }
 
   /** Show the colored tone legend + expand keys in the status line. */
@@ -281,20 +365,26 @@ export class ThreadView implements View {
     // Only KNOWN commands are intercepted; other leading-slash input (e.g. an
     // absolute path) is sent as a normal message.
     const command = parseSlashCommand(text);
-    if (command && ThreadView.COMMANDS.has(command.name)) {
-      this.runCommand(command.name);
-      return;
-    }
     const trimmed = text.trim();
     if (trimmed.length === 0 || this.sending) return;
     this.sending = true;
     this.screen?.setStatus("sending…");
     try {
-      await sendText(this.sdk, this.threadId, trimmed);
-      this.screen?.setStatus("");
-      await this.refresh();
+      const status =
+        command && ThreadView.COMMANDS.has(command.name)
+          ? await this.runCommand(command.name, command.args)
+          : (await sendText(this.sdk, this.threadId, trimmed)).delivery === "queued"
+            ? "message queued"
+            : "";
+      this.input.clear();
+      this.renderComposer();
+      if (status !== null) this.screen?.setStatus(status);
+      if (status !== null) await this.refresh();
     } catch (error) {
-      this.screen?.setStatus(`send failed: ${errorText(error)}`, "error");
+      this.screen?.setStatus(
+        `${command && ThreadView.COMMANDS.has(command.name) ? "action" : "send"} failed: ${errorText(error)}`,
+        "error",
+      );
     } finally {
       this.sending = false;
     }

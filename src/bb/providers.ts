@@ -35,7 +35,9 @@ export async function spawnThread(sdk: BBSdk, params: SpawnParams): Promise<stri
     ...(params.model ? { model: params.model } : {}),
     ...permissionModeArg(params.permissionMode),
     ...(params.reasoningLevel ? { reasoningLevel: params.reasoningLevel as ReasoningLevel } : {}),
-    environment: { type: "project-default" },
+    environment: params.environmentId
+      ? { type: "reuse", environmentId: params.environmentId }
+      : { type: "project-default" },
     prompt: params.prompt,
   });
   const rec = response as { threadId?: unknown; id?: unknown };

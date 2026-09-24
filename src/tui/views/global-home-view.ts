@@ -15,6 +15,7 @@ import { ListPanel, Screen } from "./chrome.ts";
 import { PluginsView } from "./plugins-view.ts";
 import { ProjectGroupView } from "./project-group-view.ts";
 import { ThreadListView } from "./thread-list-view.ts";
+import { ThreadSearchView } from "./thread-search-view.ts";
 
 /** Hints for the selected row, most important first (narrow terminals drop from the end). */
 function hints(isRoot: boolean, row: HomeRow | undefined): string {
@@ -23,7 +24,7 @@ function hints(isRoot: boolean, row: HomeRow | undefined): string {
     const fold = row.collapsed ? "enter expand" : "enter collapse";
     return `↑/↓ move · ${fold} · e rename · u ungroup · ${quit} · r refresh`;
   }
-  return `↑/↓ move · enter open · g group · ${quit} · p plugins · r refresh`;
+  return `↑/↓ move · enter open · s search · g group · ${quit} · p plugins · r refresh`;
 }
 
 const NO_GROUPS: ProjectGroupState = { supported: false, groups: [], collapsed: new Set() };
@@ -105,6 +106,9 @@ export class GlobalHomeView implements View {
         break;
       case "p":
         void this.host.navigator.push(new PluginsView(this.sdk));
+        break;
+      case "s":
+        void this.host.navigator.push(new ThreadSearchView(this.sdk));
         break;
       case "r":
         void this.refresh();

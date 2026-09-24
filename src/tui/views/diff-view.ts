@@ -21,8 +21,8 @@ const DIFF_TAIL = 800;
 
 /**
  * Review the changes an agent made in a thread's environment: the changed-files
- * summary plus the eagerly-loaded unified patches. Read-only for now (commit / PR
- * actions land in a later pass).
+ * summary plus the eagerly-loaded unified patches. Toggle between uncommitted
+ * changes and the whole branch.
  */
 export class DiffView implements View {
   readonly title = "diff";
@@ -31,6 +31,7 @@ export class DiffView implements View {
   private screen: Screen | null = null;
   private pane: ScrollBoxRenderable | null = null;
   private body: TextRenderable | null = null;
+  private target: "uncommitted" | "all" = "uncommitted";
 
   constructor(
     private readonly sdk: BBSdk,
@@ -42,7 +43,7 @@ export class DiffView implements View {
     const screen = new Screen(host.renderer, {
       title: "diff",
       subtitle: "uncommitted changes",
-      hints: "↑/↓ pgup/pgdn scroll · r refresh · q back",
+      hints: "↑/↓ pgup/pgdn scroll · a toggle branch · r refresh · q back",
     });
     this.pane = new ScrollBoxRenderable(host.renderer, { flexGrow: 1 });
     this.body = new TextRenderable(host.renderer, { content: "loading diff…" });
@@ -75,6 +76,14 @@ export class DiffView implements View {
         void this.host.navigator.pop();
         return;
       case "r":
+        void this.refresh();
+        return;
+      case "a":
+        this.target = this.target === "uncommitted" ? "all" : "uncommitted";
+        this.screen?.setTitle(
+          "diff",
+          this.target === "all" ? "whole branch" : "uncommitted changes",
+        );
         void this.refresh();
         return;
       case "up":
@@ -112,7 +121,7 @@ export class DiffView implements View {
         this.body.content = "this thread has no environment to diff";
         return;
       }
-      const response = await getDiffFiles(this.sdk, environmentId);
+      const response = await getDiffFiles(this.sdk, environmentId, undefined, this.target);
       if (!this.body) return; // left the view mid-fetch
       const all = renderDiffFiles(response);
       // Count files over the full diff, before the render cap truncates it.

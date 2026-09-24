@@ -8,11 +8,14 @@ import { errorText } from "../util.ts";
 import { ListPanel, Screen } from "./chrome.ts";
 import { SkillsView } from "./skills-view.ts";
 import { SpawnWizardView } from "./spawn-wizard-view.ts";
+import { ThreadSearchView } from "./thread-search-view.ts";
 import { ThreadView } from "./thread-view.ts";
 
 /** Hints, most important first (narrow terminals drop from the end). */
-function hints(isRoot: boolean): string {
-  return `↑/↓ move · enter open · n new · ${isRoot ? "q quit" : "q back"} · p skills · r refresh`;
+function hints(isRoot: boolean, archived: boolean): string {
+  return archived
+    ? `↑/↓ move · enter open · u unarchive · v active · ${isRoot ? "q quit" : "q back"}`
+    : `↑/↓ move · enter open · n new · s search · i pin · x archive · v archived · ${isRoot ? "q quit" : "q back"}`;
 }
 
 /** Status-bar segment for the shorthand-seeded new-thread defaults, or null if none. */
@@ -43,6 +46,8 @@ export class ThreadListView implements View {
   private unsub: Unsubscribe | null = null;
   /** Bumped on mount/unmount so a fetch from a previous mount can't paint this one. */
   private generation = 0;
+  private archived = false;
+  private pendingArchiveId: string | null = null;
 
   constructor(
     private readonly sdk: BBSdk,
@@ -56,7 +61,7 @@ export class ThreadListView implements View {
     const screen = new Screen(host.renderer, {
       title: this.project.name,
       subtitle: "threads",
-      hints: hints(host.navigator.depth <= 1),
+      hints: hints(host.navigator.depth <= 1, this.archived),
       wordmark: true,
     });
     this.panel = new ListPanel(host.renderer);
@@ -86,6 +91,7 @@ export class ThreadListView implements View {
   }
 
   onKey(key: KeyEvent): void {
+    if (key.name !== "x") this.pendingArchiveId = null;
     switch (key.name) {
       case "up":
       case "k":
@@ -100,14 +106,34 @@ export class ThreadListView implements View {
         this.open();
         break;
       case "n":
+        if (this.archived) break;
         // The project already exists here, so resolving its id is immediate. The
         // shorthand preset (if any) pre-seeds the wizard.
         void this.host.navigator.push(
-          new SpawnWizardView(this.sdk, async () => this.project, this.preset),
+          new SpawnWizardView(this.sdk, async () => this.project, this.preset, this.project.id),
         );
         break;
       case "p":
         void this.host.navigator.push(new SkillsView(this.sdk, this.project.id));
+        break;
+      case "s":
+        void this.host.navigator.push(new ThreadSearchView(this.sdk, this.project.id));
+        break;
+      case "v":
+        this.archived = !this.archived;
+        this.selected = 0;
+        this.screen?.setTitle(this.project.name, this.archived ? "archived threads" : "threads");
+        this.screen?.setHints(hints(this.host.navigator.depth <= 1, this.archived));
+        void this.refresh();
+        break;
+      case "i":
+        if (!this.archived) void this.togglePin();
+        break;
+      case "x":
+        if (!this.archived) void this.archiveSelected();
+        break;
+      case "u":
+        if (this.archived) void this.unarchiveSelected();
         break;
       case "r":
         void this.refresh();
@@ -118,6 +144,48 @@ export class ThreadListView implements View {
         break;
       default:
         break;
+    }
+  }
+
+  private async togglePin(): Promise<void> {
+    const row = this.rows[this.selected];
+    if (!row) return;
+    try {
+      if (row.pinned) await this.sdk.threads.unpin({ threadId: row.id });
+      else await this.sdk.threads.pin({ threadId: row.id });
+      await this.refresh();
+    } catch (error) {
+      this.screen?.setStatus(`pin failed: ${errorText(error)}`, "error");
+    }
+  }
+
+  private async archiveSelected(): Promise<void> {
+    const row = this.rows[this.selected];
+    if (!row) return;
+    if (this.pendingArchiveId !== row.id) {
+      this.pendingArchiveId = row.id;
+      this.screen?.setStatus(`press x again to archive ${row.title}`);
+      return;
+    }
+    this.pendingArchiveId = null;
+    try {
+      await this.sdk.threads.archive({ threadId: row.id });
+      await this.refresh();
+      this.screen?.setStatus("thread archived");
+    } catch (error) {
+      this.screen?.setStatus(`archive failed: ${errorText(error)}`, "error");
+    }
+  }
+
+  private async unarchiveSelected(): Promise<void> {
+    const row = this.rows[this.selected];
+    if (!row) return;
+    try {
+      await this.sdk.threads.unarchive({ threadId: row.id });
+      await this.refresh();
+      this.screen?.setStatus("thread unarchived");
+    } catch (error) {
+      this.screen?.setStatus(`unarchive failed: ${errorText(error)}`, "error");
     }
   }
 
@@ -134,13 +202,14 @@ export class ThreadListView implements View {
   private async refresh(): Promise<void> {
     if (!this.panel) return;
     const generation = this.generation;
+    const archived = this.archived;
     try {
-      const entries = await listThreads(this.sdk, this.project.id);
-      if (generation !== this.generation || !this.panel) return; // left or remounted mid-fetch
-      this.rows = renderThreadList(entries);
+      const entries = await listThreads(this.sdk, this.project.id, undefined, archived);
+      if (generation !== this.generation || archived !== this.archived || !this.panel) return;
+      this.rows = renderThreadList(entries, archived);
       this.selected = this.panel.setItems(
         this.rows.map(formatThreadRow),
-        "no threads yet — press n to start one",
+        this.archived ? "no archived threads" : "no threads yet — press n to start one",
         this.selected,
       );
       this.renderContext();
@@ -152,6 +221,9 @@ export class ThreadListView implements View {
 
   private renderContext(): void {
     const count = `${this.rows.length} thread${this.rows.length === 1 ? "" : "s"}`;
-    this.screen?.setContext([count, presetSummary(this.preset) ?? ""]);
+    this.screen?.setContext([
+      count,
+      this.archived ? "archived" : (presetSummary(this.preset) ?? ""),
+    ]);
   }
 }

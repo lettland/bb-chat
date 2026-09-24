@@ -6,6 +6,7 @@ import {
 } from "@opentui/core";
 import type { BBSdk } from "../../bb/sdk.ts";
 import { getTerminalOutput, listThreadTerminals } from "../../bb/terminals.ts";
+import { InputBuffer } from "../input-buffer.ts";
 import type { View, ViewHost } from "../navigator.ts";
 import { decodeTerminalOutput, type TerminalRow, toTerminalRows } from "../terminal-render.ts";
 import { palette, toneColor } from "../theme.ts";
@@ -20,8 +21,8 @@ const LIST_MAX_ROWS = 6;
 /**
  * A thread's terminals: the session list plus the selected terminal's recent
  * output (base64 chunks decoded, escapes stripped) in a scrollable pane that
- * follows the tail. Read-only for now — interactive input and a full ANSI pane
- * land in a later pass.
+ * follows the tail. Commands can be sent to a selected session; ANSI output is
+ * rendered as safe plain text.
  */
 export class TerminalsView implements View {
   readonly title = "terminals";
@@ -30,8 +31,13 @@ export class TerminalsView implements View {
   private screen: Screen | null = null;
   private panel: ListPanel | null = null;
   private output: TextRenderable | null = null;
+  private command: TextRenderable | null = null;
   private rows: TerminalRow[] = [];
   private selected = 0;
+  private entering = false;
+  private readonly input = new InputBuffer();
+  private pendingAction: "close" | "restart" | null = null;
+  private busy = false;
 
   constructor(
     private readonly sdk: BBSdk,
@@ -43,7 +49,7 @@ export class TerminalsView implements View {
     const p = palette();
     const screen = new Screen(host.renderer, {
       title: "terminals",
-      hints: "↑/↓ select · r refresh · q back",
+      hints: "↑/↓ select · enter send · n new · x close · z restart · r refresh · q back",
     });
     this.panel = new ListPanel(host.renderer, { flexGrow: 0, height: 1 });
     screen.content.add(this.panel.root);
@@ -59,6 +65,8 @@ export class TerminalsView implements View {
     this.output = new TextRenderable(host.renderer, { content: "", fg: toneColor("output") });
     pane.add(this.output);
     screen.content.add(pane);
+    this.command = new TextRenderable(host.renderer, { content: "", visible: false });
+    screen.content.add(this.command);
 
     this.screen = screen;
     this.box = screen.outer;
@@ -75,9 +83,24 @@ export class TerminalsView implements View {
     this.screen = null;
     this.panel = null;
     this.output = null;
+    this.command = null;
   }
 
   onKey(key: KeyEvent): void {
+    if (this.entering) {
+      if (key.name === "escape") {
+        this.entering = false;
+        this.input.clear();
+        this.renderCommand();
+      } else if (!this.busy) {
+        const action = this.input.handle(key);
+        if (action.type === "submit") void this.sendCommand(action.value);
+        else if (action.type === "update") this.renderCommand();
+      }
+      return;
+    }
+    if (this.busy) return;
+    if (key.name !== "x" && key.name !== "z") this.pendingAction = null;
     switch (key.name) {
       case "up":
       case "k":
@@ -90,12 +113,100 @@ export class TerminalsView implements View {
       case "r":
         void this.refreshList();
         break;
+      case "return":
+      case "enter":
+        if (this.rows[this.selected]) {
+          this.entering = true;
+          this.renderCommand();
+        }
+        break;
+      case "n":
+        void this.createTerminal();
+        break;
+      case "x":
+        void this.confirmAction("close");
+        break;
+      case "z":
+        void this.confirmAction("restart");
+        break;
       case "q":
       case "escape":
         void this.host.navigator.pop();
         break;
       default:
         break;
+    }
+  }
+
+  private renderCommand(): void {
+    if (!this.command) return;
+    this.command.visible = this.entering;
+    this.command.content = this.entering ? `❯ ${this.input.value}` : "";
+    this.screen?.setHints(
+      this.entering
+        ? "enter send command · esc cancel"
+        : "↑/↓ select · enter send · n new · x close · z restart · r refresh · q back",
+    );
+  }
+
+  private async sendCommand(text: string): Promise<void> {
+    const row = this.rows[this.selected];
+    if (!row || !text.trim()) return;
+    this.busy = true;
+    try {
+      await this.sdk.terminals.input({
+        terminalId: row.id,
+        dataBase64: Buffer.from(`${text}\n`).toString("base64"),
+      });
+      this.input.clear();
+      this.entering = false;
+      this.renderCommand();
+      await this.refreshOutput();
+    } catch (error) {
+      this.screen?.setStatus(`terminal input failed: ${errorText(error)}`, "error");
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  private async createTerminal(): Promise<void> {
+    this.busy = true;
+    try {
+      const created = await this.sdk.terminals.create({
+        scope: { kind: "thread", threadId: this.threadId },
+        cols: process.stdout.columns ?? 80,
+        rows: process.stdout.rows ?? 24,
+      });
+      await this.refreshList(created.id);
+      this.screen?.setStatus("terminal created");
+    } catch (error) {
+      this.screen?.setStatus(`terminal creation failed: ${errorText(error)}`, "error");
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  private async confirmAction(action: "close" | "restart"): Promise<void> {
+    const row = this.rows[this.selected];
+    if (!row) return;
+    if (this.pendingAction !== action) {
+      this.pendingAction = action;
+      this.screen?.setStatus(
+        `press ${action === "close" ? "x" : "z"} again to ${action} ${row.title}`,
+      );
+      return;
+    }
+    this.pendingAction = null;
+    this.busy = true;
+    try {
+      if (action === "close") await this.sdk.terminals.close({ terminalId: row.id, mode: "force" });
+      else await this.sdk.terminals.restart({ terminalId: row.id });
+      await this.refreshList();
+      this.screen?.setStatus(`terminal ${action === "close" ? "closed" : "restarted"}`);
+    } catch (error) {
+      this.screen?.setStatus(`terminal ${action} failed: ${errorText(error)}`, "error");
+    } finally {
+      this.busy = false;
     }
   }
 
@@ -107,12 +218,17 @@ export class TerminalsView implements View {
     void this.refreshOutput();
   }
 
-  private async refreshList(): Promise<void> {
+  private async refreshList(preferredId?: string): Promise<void> {
     if (!this.panel) return;
     try {
       const rows = toTerminalRows(await listThreadTerminals(this.sdk, this.threadId));
       if (!this.panel) return; // left the view mid-fetch
       this.rows = rows;
+      if (preferredId)
+        this.selected = Math.max(
+          0,
+          rows.findIndex((row) => row.id === preferredId),
+        );
       this.panel.root.height = Math.max(1, Math.min(rows.length, LIST_MAX_ROWS));
       this.selected = this.panel.setItems(
         rows.map((row) => `${row.title}  [${row.status}]`),

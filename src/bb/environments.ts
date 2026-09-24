@@ -2,14 +2,18 @@ import type { BBSdk } from "./sdk.ts";
 
 /**
  * Fetch the changed-files diff (with eagerly-loaded patches) for an environment.
- * Targets uncommitted working-tree changes — the pre-commit review case.
- * Reviewing a whole branch (`target: "all"`) needs the merge-base branch and
- * lands in a later pass.
+ * Review uncommitted changes or the full branch relative to its merge base.
  */
-export function getDiffFiles(
+export async function getDiffFiles(
   sdk: BBSdk,
   environmentId: string,
   signal?: AbortSignal,
+  target: "uncommitted" | "all" = "uncommitted",
 ): Promise<unknown> {
-  return sdk.environments.diffFiles({ environmentId, target: "uncommitted", signal });
+  if (target === "uncommitted")
+    return sdk.environments.diffFiles({ environmentId, target, signal });
+  const environment = await sdk.environments.get({ environmentId, signal });
+  const mergeBaseBranch = environment.mergeBaseBranch ?? environment.defaultBranch;
+  if (!mergeBaseBranch) throw new Error("this environment has no merge base branch");
+  return sdk.environments.diffFiles({ environmentId, target, mergeBaseBranch, signal });
 }

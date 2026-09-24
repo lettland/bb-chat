@@ -12,14 +12,17 @@ export interface ThreadRow {
   /** A pending approval/question the user must act on. */
   attention: boolean;
   updatedAt: number;
+  pinned?: boolean;
+  archived?: boolean;
 }
 
-function toRow(entry: unknown): ThreadRow | null {
+function toRow(entry: unknown, archived: boolean): ThreadRow | null {
   if (!entry || typeof entry !== "object") return null;
   const rec = entry as Record<string, unknown>;
   const id = typeof rec.id === "string" ? rec.id : null;
   if (!id) return null;
-  if (typeof rec.archivedAt === "number" || typeof rec.deletedAt === "number") return null;
+  if ((typeof rec.archivedAt === "number") !== archived || typeof rec.deletedAt === "number")
+    return null;
   if (rec.visibility === "hidden") return null;
   const title =
     (typeof rec.title === "string" && rec.title.length > 0 && rec.title) ||
@@ -31,22 +34,26 @@ function toRow(entry: unknown): ThreadRow | null {
     status: typeof rec.status === "string" ? rec.status : "unknown",
     attention: rec.hasPendingInteraction === true,
     updatedAt: typeof rec.updatedAt === "number" ? rec.updatedAt : 0,
+    pinned: typeof rec.pinnedAt === "number",
+    archived,
   };
 }
 
 /** Normalize + sort thread entries newest-first. */
-export function renderThreadList(entries: readonly unknown[]): ThreadRow[] {
+export function renderThreadList(entries: readonly unknown[], archived = false): ThreadRow[] {
   const rows: ThreadRow[] = [];
   for (const entry of entries) {
-    const row = toRow(entry);
+    const row = toRow(entry, archived);
     if (row) rows.push(row);
   }
-  rows.sort((a, b) => b.updatedAt - a.updatedAt);
+  rows.sort(
+    (a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.updatedAt - a.updatedAt,
+  );
   return rows;
 }
 
 /** One-line display string for a thread row (e.g. `! running   Fix the flaky test`). */
 export function formatThreadRow(row: ThreadRow): string {
-  const marker = row.attention ? "!" : " ";
+  const marker = row.attention ? "!" : row.pinned ? "★" : " ";
   return `${marker} ${row.status.padEnd(10).slice(0, 10)}  ${row.title}`;
 }

@@ -5,18 +5,426 @@ import type { BBSdk } from "../src/bb/sdk.ts";
 import { Navigator } from "../src/tui/navigator.ts";
 import { DiffView } from "../src/tui/views/diff-view.ts";
 import { GlobalHomeView } from "../src/tui/views/global-home-view.ts";
+import { InteractionsView } from "../src/tui/views/interactions-view.ts";
 import { MessageView } from "../src/tui/views/message-view.ts";
 import { PluginsView } from "../src/tui/views/plugins-view.ts";
+import { QueueView } from "../src/tui/views/queue-view.ts";
 import { SkillsView } from "../src/tui/views/skills-view.ts";
 import { SpawnWizardView } from "../src/tui/views/spawn-wizard-view.ts";
 import { TerminalsView } from "../src/tui/views/terminals-view.ts";
 import { ThreadListView } from "../src/tui/views/thread-list-view.ts";
+import { ThreadSearchView } from "../src/tui/views/thread-search-view.ts";
 import { ThreadView } from "../src/tui/views/thread-view.ts";
 
 type TestSetup = Awaited<ReturnType<typeof createTestRenderer>>;
 const live: TestSetup[] = [];
 afterEach(() => {
   for (const t of live.splice(0)) t.renderer.destroy();
+});
+
+describe("BB actions added to the TUI", () => {
+  test("failed delivery leaves the draft editable; stop uses the BB thread action", async () => {
+    const actions: string[] = [];
+    const app = await boot();
+    await app.navigator.push(
+      new ThreadView(fakeSdk({ sendError: new Error("offline"), actions }), "thr_a", "thread"),
+    );
+    app.type("keep me");
+    app.press("return");
+    await app.shows("send failed: offline");
+    expect(await app.frame()).toContain("❯ keep me");
+    for (let i = 0; i < "keep me".length; i++) app.press("backspace");
+    app.type("/stop");
+    app.press("return");
+    await eventually(app.t, () => actions.includes("stop"));
+  });
+
+  test("an approval shows its command and resolves once", async () => {
+    const resolved: unknown[] = [];
+    const interactions: unknown[] = [
+      {
+        id: "int_1",
+        status: "pending",
+        origin: { kind: "provider" },
+        payload: {
+          kind: "approval",
+          reason: "Needs network",
+          availableDecisions: ["allow_once", "deny"],
+          subject: { kind: "command", command: "curl example.com", cwd: "/repo" },
+        },
+      },
+    ];
+    const app = await boot();
+    await app.navigator.push(
+      new ThreadView(fakeSdk({ interactions, resolved }), "thr_a", "thread"),
+    );
+    app.press("i", { ctrl: true });
+    await app.shows("curl example.com");
+    app.press("a");
+    await eventually(app.t, () => resolved.length === 1);
+    expect(resolved[0]).toEqual({
+      threadId: "thr_a",
+      interactionId: "int_1",
+      resolution: { decision: "allow_once", grantedPermissions: null },
+    });
+    await app.shows("no pending interactions");
+  });
+
+  test("file approval displays every patch linked to its call", async () => {
+    const resolved: unknown[] = [];
+    const interactions: unknown[] = [
+      {
+        id: "int_file",
+        status: "pending",
+        payload: {
+          kind: "approval",
+          availableDecisions: ["allow_once", "deny"],
+          subject: {
+            kind: "file_change",
+            itemId: "call_1",
+            writeScope: "/repo",
+            sessionGrant: null,
+          },
+        },
+      },
+    ];
+    const timelineRows = () => [
+      {
+        kind: "turn",
+        children: [
+          {
+            kind: "work",
+            workKind: "file-change",
+            callId: "call_1",
+            change: { path: "src/a.ts", kind: "modify", diff: "@@ -1 +1 @@\n-old\n+new" },
+          },
+          {
+            kind: "work",
+            workKind: "file-change",
+            callId: "call_1",
+            change: { path: "src/b.ts", kind: "add", diff: "@@ -0,0 +1 @@\n+added" },
+          },
+        ],
+      },
+    ];
+    const app = await boot();
+    await app.navigator.push(
+      new InteractionsView(fakeSdk({ interactions, resolved, timelineRows }), "thr_a"),
+    );
+    const frame = await app.shows("src/a.ts");
+    expect(frame).toContain("+new");
+    expect(frame).toContain("src/b.ts");
+    app.press("a");
+    await eventually(app.t, () => resolved.length === 1);
+  });
+
+  test("file approval stays blocked when one linked patch is unavailable", async () => {
+    const resolved: unknown[] = [];
+    const interactions: unknown[] = [
+      {
+        id: "int_binary",
+        status: "pending",
+        payload: {
+          kind: "approval",
+          availableDecisions: ["allow_once", "deny"],
+          subject: { kind: "file_change", itemId: "call_binary", writeScope: "/repo" },
+        },
+      },
+    ];
+    const timelineRows = () => [
+      {
+        kind: "work",
+        workKind: "file-change",
+        callId: "call_binary",
+        change: { path: "image.png", diff: null },
+      },
+    ];
+    const app = await boot();
+    await app.navigator.push(
+      new InteractionsView(fakeSdk({ interactions, resolved, timelineRows }), "thr_a"),
+    );
+    await app.shows("file patch is unavailable");
+    app.press("a");
+    await app.shows("Approval disabled");
+    expect(resolved).toHaveLength(0);
+  });
+
+  test("tool approval shows arguments; missing details block approval but allow denial", async () => {
+    const resolved: unknown[] = [];
+    const request = {
+      id: "int_tool",
+      status: "pending",
+      payload: {
+        kind: "approval",
+        availableDecisions: ["allow_once", "deny"],
+        subject: {
+          kind: "tool_use",
+          itemId: "call_tool",
+          tool: "deploy",
+          presentation: { title: "Deploy" },
+        },
+      },
+    };
+    const interactions: unknown[] = [request];
+    const timelineRows = () => [
+      {
+        kind: "work",
+        workKind: "tool",
+        callId: "call_tool",
+        toolName: "deploy",
+        toolArgs: { target: "stage" },
+      },
+    ];
+    const app = await boot();
+    await app.navigator.push(
+      new InteractionsView(fakeSdk({ interactions, resolved, timelineRows }), "thr_a"),
+    );
+    const frame = await app.shows('"target": "stage"');
+    expect(frame).toContain("Tool: deploy");
+    app.press("a");
+    await eventually(app.t, () => resolved.length === 1);
+
+    const blocked: unknown[] = [];
+    const missing = await boot();
+    await missing.navigator.push(
+      new InteractionsView(
+        fakeSdk({ interactions: [request], resolved: blocked, timelineRows: () => [] }),
+        "thr_a",
+      ),
+    );
+    await missing.shows("Tool arguments unavailable");
+    missing.press("a");
+    await missing.shows("Approval disabled");
+    expect(blocked).toHaveLength(0);
+    missing.press("d");
+    await eventually(missing.t, () => blocked.length === 1);
+    expect(blocked[0]).toEqual({
+      threadId: "thr_a",
+      interactionId: "int_tool",
+      resolution: { decision: "deny" },
+    });
+  });
+
+  test("a provider question accepts an offered value", async () => {
+    const resolved: unknown[] = [];
+    const interactions: unknown[] = [
+      {
+        id: "int_2",
+        status: "pending",
+        origin: { kind: "provider" },
+        payload: {
+          kind: "user_question",
+          questions: [
+            {
+              id: "q1",
+              prompt: "Which environment?",
+              multiSelect: false,
+              allowFreeText: false,
+              options: [{ value: "stage", label: "Stage" }],
+            },
+          ],
+        },
+      },
+    ];
+    const app = await boot();
+    await app.navigator.push(new InteractionsView(fakeSdk({ interactions, resolved }), "thr_a"));
+    await app.shows("Which environment?");
+    app.press("return");
+    app.type("stage");
+    app.press("return");
+    await eventually(app.t, () => resolved.length === 1);
+    expect(resolved[0]).toEqual({
+      threadId: "thr_a",
+      interactionId: "int_2",
+      resolution: { kind: "user_answer", answers: { q1: { selected: ["stage"] } } },
+    });
+  });
+
+  test("a plugin form submits JSON through the interaction response", async () => {
+    const resolved: unknown[] = [];
+    const interactions: unknown[] = [
+      {
+        id: "int_form",
+        status: "pending",
+        origin: { kind: "plugin" },
+        payload: { kind: "plugin", title: "Choose target", data: { choices: ["stage"] } },
+      },
+    ];
+    const app = await boot();
+    await app.navigator.push(new InteractionsView(fakeSdk({ interactions, resolved }), "thr_a"));
+    await app.shows("Choose target");
+    app.press("return");
+    app.type('{"target":"stage"}');
+    app.press("return");
+    await eventually(app.t, () => resolved.length === 1);
+    expect(resolved[0]).toEqual({
+      threadId: "thr_a",
+      interactionId: "int_form",
+      value: { target: "stage" },
+    });
+  });
+
+  test("new threads can reuse a selected environment", async () => {
+    const spawnArgs: unknown[] = [];
+    const app = await boot();
+    const sdk = fakeSdk({
+      spawnArgs,
+      environments: [
+        {
+          id: "env_2",
+          status: "ready",
+          lifecycle: { phase: "active" },
+          path: "/repo/other",
+          branchName: "feature/a",
+        },
+      ],
+    });
+    await app.navigator.push(new SpawnWizardView(sdk, async () => project, null, project.id));
+    await app.shows("step 1/5 · provider");
+    app.press("return");
+    await app.shows("step 2/5 · model");
+    app.press("return");
+    await app.shows("step 3/5 · mode");
+    app.press("return");
+    await app.shows("step 4/5 · environment");
+    app.press("down");
+    app.press("return");
+    await app.shows("step 5/5 · prompt");
+    app.type("do work");
+    app.press("return");
+    await eventually(app.t, () => spawnArgs.length === 1);
+    expect(spawnArgs[0]).toMatchObject({ environment: { type: "reuse", environmentId: "env_2" } });
+  });
+
+  test("a terminal accepts a command and creates a new session", async () => {
+    const terminalCalls: string[] = [];
+    const app = await boot();
+    await app.navigator.push(new TerminalsView(fakeSdk({ terminalCalls }), "thr_a"));
+    app.press("return");
+    app.type("pwd");
+    app.press("return");
+    await eventually(app.t, () => terminalCalls.includes("pwd\n"));
+    app.press("n");
+    await eventually(app.t, () => terminalCalls.includes("create"));
+    await app.shows("shell");
+  });
+
+  test("threads can be pinned, archived, and restored from the archived list", async () => {
+    const actions: string[] = [];
+    const rows: unknown[] = [
+      {
+        id: "thr_a",
+        title: "Work",
+        status: "idle",
+        updatedAt: 1,
+        archivedAt: null,
+        pinnedAt: null,
+      },
+    ];
+    const app = await boot();
+    await app.navigator.push(new ThreadListView(fakeSdk({ threads: rows, actions }), project));
+    await app.shows("Work");
+    app.press("i");
+    await eventually(app.t, () => actions.includes("pin"));
+    app.press("x");
+    expect(actions).not.toContain("archive");
+    app.press("x");
+    await eventually(app.t, () => actions.includes("archive"));
+    await app.shows("no threads yet");
+    app.press("v");
+    await app.shows("Work");
+    app.press("u");
+    await eventually(app.t, () => actions.includes("unarchive"));
+  });
+
+  test("BB search opens a matching thread", async () => {
+    const app = await boot();
+    const searchResult = {
+      active: {
+        total: 1,
+        results: [
+          {
+            thread: {
+              id: "thr_a",
+              projectId: project.id,
+              title: "Fix the flaky test",
+              titleFallback: null,
+              archivedAt: null,
+            },
+            matches: [{ text: "the flaky test" }],
+          },
+        ],
+      },
+      archived: { total: 0, results: [] },
+    };
+    await app.navigator.push(new ThreadListView(fakeSdk({ searchResult }), project));
+    app.press("s");
+    await eventually(app.t, () => app.navigator.current instanceof ThreadSearchView);
+    app.type("flaky");
+    app.press("return");
+    await app.shows("the flaky test");
+    app.press("return");
+    await eventually(app.t, () => app.navigator.current instanceof ThreadView);
+  });
+
+  test("queued text can be edited and dispatched", async () => {
+    const queueCalls: string[] = [];
+    const queued: unknown[] = [
+      {
+        id: "msg_1",
+        updatedAt: 1,
+        editable: true,
+        content: [{ type: "text", text: "old", mentions: [] }],
+        payload: { kind: "inline" },
+        waitingOn: { kind: "thread-busy" },
+        failureReason: null,
+      },
+    ];
+    const app = await boot();
+    await app.navigator.push(new ThreadView(fakeSdk({ queued, queueCalls }), "thr_a", "thread"));
+    app.press("q", { ctrl: true });
+    await eventually(app.t, () => app.navigator.current instanceof QueueView);
+    await app.shows("old");
+    app.press("e");
+    app.press("backspace");
+    app.type("w");
+    app.press("return");
+    await eventually(app.t, () => queueCalls.includes("edit:olw"));
+    app.press("n");
+    await eventually(app.t, () => queueCalls.includes("send"));
+    await app.shows("no queued messages");
+  });
+
+  test("queue editing preserves mention-bearing messages by refusing an unsafe edit", async () => {
+    const queueCalls: string[] = [];
+    const queued: unknown[] = [
+      {
+        id: "msg_mention",
+        updatedAt: 1,
+        editable: true,
+        content: [{ type: "text", text: "ask @agent", mentions: [{ id: "agent" }] }],
+        payload: { kind: "inline" },
+        waitingOn: { kind: "thread-busy" },
+        failureReason: null,
+      },
+    ];
+    const app = await boot();
+    await app.navigator.push(new QueueView(fakeSdk({ queued, queueCalls }), "thr_a"));
+    await app.shows("ask @agent");
+    app.press("e");
+    await app.shows("one plain text part");
+    expect(queueCalls).toHaveLength(0);
+  });
+
+  test("diff review switches from working changes to the full branch", async () => {
+    const diffTargets: string[] = [];
+    const app = await boot();
+    await app.navigator.push(new DiffView(fakeSdk({ diffTargets }), "thr_a"));
+    expect(diffTargets).toEqual(["uncommitted"]);
+    app.press("a");
+    await eventually(app.t, () => diffTargets.includes("all"));
+    await app.shows("whole branch");
+  });
 });
 
 const THREADS = [
@@ -34,6 +442,16 @@ interface StubOptions {
   /** Receives every message the view sends; set `sendError` to fail the send. */
   sent?: string[];
   sendError?: Error;
+  actions?: string[];
+  interactions?: unknown[];
+  resolved?: unknown[];
+  spawnArgs?: unknown[];
+  environments?: unknown[];
+  terminalCalls?: string[];
+  searchResult?: unknown;
+  queued?: unknown[];
+  queueCalls?: string[];
+  diffTargets?: string[];
   /** Receives the realtime callback so a test can simulate a server push. */
   onSubscribe?: (callback: () => void) => void;
   providersError?: Error;
@@ -57,6 +475,7 @@ interface StubOptions {
 /** A stub SDK covering the calls every view makes. */
 function fakeSdk(o: StubOptions = {}): BBSdk {
   const b64 = (s: string) => Buffer.from(s, "utf8").toString("base64");
+  const terminalRows = o.terminals ?? [{ id: "t1", title: "dev server", status: "running" }];
   const fail = (error: Error | undefined) => {
     if (error) throw error;
   };
@@ -91,9 +510,107 @@ function fakeSdk(o: StubOptions = {}): BBSdk {
         o.sent?.push(args.input[0]?.text ?? "");
         return {};
       },
-      spawn: async () => {
+      spawn: async (args: unknown) => {
         fail(o.spawnError);
+        o.spawnArgs?.push(args);
         return o.spawnResult ?? { threadId: "thr_new" };
+      },
+      stop: async () => {
+        o.actions?.push("stop");
+        return {};
+      },
+      retry: async () => {
+        o.actions?.push("retry");
+        return {};
+      },
+      compact: async () => {
+        o.actions?.push("compact");
+        return {};
+      },
+      clearContext: async () => {
+        o.actions?.push("clear");
+        return {};
+      },
+      cancelPlan: async () => {
+        o.actions?.push("cancel-plan");
+        return {};
+      },
+      clearGoal: async () => {
+        o.actions?.push("clear-goal");
+        return {};
+      },
+      update: async (args: unknown) => {
+        o.actions?.push(JSON.stringify(args));
+        return {};
+      },
+      interactions: {
+        list: async () => o.interactions ?? [],
+        resolve: async (args: unknown) => {
+          o.resolved?.push(args);
+          o.interactions?.shift();
+          return {};
+        },
+        respond: async (args: unknown) => {
+          o.resolved?.push(args);
+          o.interactions?.shift();
+          return {};
+        },
+      },
+      archive: async ({ threadId }: { threadId: string }) => {
+        const row = o.threads?.find((item) => (item as { id?: string }).id === threadId) as
+          | { archivedAt?: number }
+          | undefined;
+        if (row) row.archivedAt = Date.now();
+        o.actions?.push("archive");
+        return {};
+      },
+      unarchive: async ({ threadId }: { threadId: string }) => {
+        const row = o.threads?.find((item) => (item as { id?: string }).id === threadId) as
+          | { archivedAt?: null }
+          | undefined;
+        if (row) row.archivedAt = null;
+        o.actions?.push("unarchive");
+        return {};
+      },
+      pin: async ({ threadId }: { threadId: string }) => {
+        const row = o.threads?.find((item) => (item as { id?: string }).id === threadId) as
+          | { pinnedAt?: number }
+          | undefined;
+        if (row) row.pinnedAt = Date.now();
+        o.actions?.push("pin");
+        return {};
+      },
+      unpin: async ({ threadId }: { threadId: string }) => {
+        const row = o.threads?.find((item) => (item as { id?: string }).id === threadId) as
+          | { pinnedAt?: null }
+          | undefined;
+        if (row) row.pinnedAt = null;
+        o.actions?.push("unpin");
+        return {};
+      },
+      search: async () =>
+        o.searchResult ?? {
+          active: { total: 0, results: [] },
+          archived: { total: 0, results: [] },
+        },
+      queuedMessages: {
+        list: async () => o.queued ?? [],
+        update: async (args: { input: { text?: string }[] }) => {
+          o.queueCalls?.push(`edit:${args.input[0]?.text ?? ""}`);
+          const row = o.queued?.[0] as { content?: unknown[] } | undefined;
+          if (row) row.content = args.input;
+          return {};
+        },
+        send: async () => {
+          o.queueCalls?.push("send");
+          o.queued?.shift();
+          return {};
+        },
+        delete: async () => {
+          o.queueCalls?.push("delete");
+          o.queued?.shift();
+          return {};
+        },
       },
     },
     projects: {
@@ -149,7 +666,7 @@ function fakeSdk(o: StubOptions = {}): BBSdk {
       list: async () => {
         fail(o.terminalsError);
         return {
-          sessions: o.terminals ?? [{ id: "t1", title: "dev server", status: "running" }],
+          sessions: terminalRows,
         };
       },
       output: async (args: { terminalId: string }) => {
@@ -161,10 +678,31 @@ function fakeSdk(o: StubOptions = {}): BBSdk {
           ],
         };
       },
+      input: async (args: { dataBase64: string }) => {
+        o.terminalCalls?.push(Buffer.from(args.dataBase64, "base64").toString("utf8"));
+        return {};
+      },
+      create: async () => {
+        const row = { id: "t_new", title: "shell", status: "running" };
+        terminalRows.push(row);
+        o.terminalCalls?.push("create");
+        return row;
+      },
+      close: async () => {
+        o.terminalCalls?.push("close");
+        return {};
+      },
+      restart: async () => {
+        o.terminalCalls?.push("restart");
+        return {};
+      },
     },
     environments: {
-      diffFiles: async () => {
+      list: async () => o.environments ?? [],
+      get: async () => ({ mergeBaseBranch: "master", defaultBranch: "master" }),
+      diffFiles: async (args: { target: string }) => {
         fail(o.diffError);
+        o.diffTargets?.push(args.target);
         return {
           outcome: "available",
           files: [{ path: "src/a.ts", changeKind: "modified", additions: 1, deletions: 1 }],

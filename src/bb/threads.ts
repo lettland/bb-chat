@@ -12,8 +12,9 @@ export function listThreads(
   sdk: BBSdk,
   projectId: string,
   signal?: AbortSignal,
+  archived = false,
 ): Promise<unknown[]> {
-  return sdk.threads.list({ projectId, archived: false, signal }) as Promise<unknown[]>;
+  return sdk.threads.list({ projectId, archived, signal }) as Promise<unknown[]>;
 }
 
 /** Turns fetched per timeline page (the server-side maximum). */
@@ -90,10 +91,15 @@ export async function getTimelineRows(
  * thread is idle and steers/queues appropriately when it is mid-turn — the same
  * default as `bb thread tell --mode auto`.
  */
-export function sendText(sdk: BBSdk, threadId: string, text: string): Promise<unknown> {
+export function sendText(
+  sdk: BBSdk,
+  threadId: string,
+  text: string,
+  mode: "auto" | "queue-if-active" | "steer" = "auto",
+): ReturnType<BBSdk["threads"]["send"]> {
   return sdk.threads.send({
     threadId,
-    mode: "auto",
+    mode,
     input: [{ type: "text", text, mentions: [] }],
   });
 }

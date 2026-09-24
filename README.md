@@ -5,7 +5,7 @@
 [![npm](https://img.shields.io/npm/v/bbchat.svg)](https://www.npmjs.com/package/bbchat)
 [![license](https://img.shields.io/badge/license-BSD--2--Clause-blue.svg)](LICENSE)
 
-**BB in your terminal.** A full TUI client for the [BB](https://github.com/get-bb/bb) coding-agent server — the terminal equivalent of the BB desktop app. `cd` into a project, run `bbchat`, and you're in that project's threads: connect to (or start) BB, browse and open threads, pick providers, watch live agent activity, review diffs, attach terminals.
+**BB in your terminal.** An interactive TUI client for the [BB](https://github.com/get-bb/bb) coding-agent server. `cd` into a project, run `bbchat`, and open its threads: connect to (or start) BB, pick providers, watch live agent activity, review diffs, and use terminals.
 
 `bbchat` is **not** a provider and **not** an upstream BB feature. It's a third client alongside the desktop/web app, talking to BB over its published SDK (`bb-app`) via HTTP/WebSocket. Provider work (Claude Code / Codex / OpenCode) still runs inside BB.
 
@@ -14,11 +14,14 @@
 
 ## Status
 
-Working: config + `bbchat init` detection, server ensure/health, project resolution
-(auto-create), the global home, live thread list, streaming chat + composer, the
-spawn wizard (provider → model → mode → prompt), diff review, terminals, and
-plugin/skill listings. The interactive views are typecheck-verified and their
-data layers checked against a live BB; broaden coverage as you use it.
+Working: config and `bbchat init` detection, server health, project resolution,
+the global home, thread search and management, streaming chat with a multiline
+composer, pending interaction resolution, queued-message management, thread
+actions, the spawn wizard (provider, model, permission mode, existing environment,
+prompt), working-tree and branch diff review, terminal commands, and plugin/skill
+listings. The interactive views have automated tests; BB still offers app flows
+that are not in this TUI, including file/image attachments, graphical plugin
+panels, PR actions, and authenticated BB Connect access.
 
 The thread view renders assistant replies as markdown with tree-sitter
 syntax-highlighted code fences (TypeScript, JavaScript, Zig, and markdown are
@@ -80,9 +83,18 @@ bbchat codex                  # just default the provider to codex
 Quote models containing `[brackets]` so your shell doesn't treat them as a glob.
 Run `bbchat providers` for the exact provider/model/reasoning/mode values.
 
-In-app keys: `↑/↓` move · `enter` open/select · `n` new thread · `p` plugins
-(global) / skills (project) · in a thread `ctrl+o` diff · `ctrl+t` terminals ·
-`esc`/`q` back · `ctrl+c` quit.
+In-app keys: `↑/↓` move · `enter` open/select · `n` new thread · `s` search ·
+`p` plugins (global) / skills (project). In a thread, use `ctrl+i` for pending
+requests, `ctrl+q` for queued messages, `ctrl+o` for diffs, and `ctrl+t` for
+terminals. The composer uses `shift+enter` for a newline and retains a draft if
+delivery fails. Enter `/actions` for thread commands. `esc` goes back from a
+thread, `q` goes back from lists, and `ctrl+c` quits.
+
+In the project thread list, `i` pins or unpins, `x` twice archives, and `v`
+shows archived threads; `u` restores one. The diff view's `a` key switches
+between uncommitted changes and the whole branch. The terminal view sends
+commands with Enter, creates a session with `n`, and confirms close/restart
+with a second `x`/`z`.
 
 **Project groups.** The global home gathers projects under the same named,
 collapsible groups as the BB sidebar (e.g. *work*, or a set of linked repos).

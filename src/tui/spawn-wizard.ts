@@ -32,16 +32,18 @@ export interface Choice {
   label: string;
 }
 
-export type WizardStep = "provider" | "model" | "mode" | "prompt";
+export type WizardStep = "provider" | "model" | "mode" | "environment" | "prompt";
 
 export interface WizardState {
   step: WizardStep;
   cursor: number;
   providers: Choice[];
   models: Choice[];
+  environments: Choice[];
   provider: Choice | null;
   model: Choice | null;
   mode: PermissionMode | null;
+  environmentId: string | null;
   /** Reasoning level, carried from a shorthand preset (no interactive step yet). */
   reasoning: string | null;
   prompt: string;
@@ -56,6 +58,7 @@ export interface SpawnParams {
   permissionMode: PermissionMode | null;
   reasoningLevel: string | null;
   prompt: string;
+  environmentId?: string;
 }
 
 /** Pre-selected new-thread options resolved from the `bbchat <provider> …` shorthand. */
@@ -104,9 +107,11 @@ export function initWizard(providers: Choice[]): WizardState {
     cursor: 0,
     providers,
     models: [],
+    environments: [],
     provider: null,
     model: null,
     mode: null,
+    environmentId: null,
     reasoning: null,
     prompt: "",
   };
@@ -146,6 +151,8 @@ export function stepChoices(state: WizardState): Choice[] {
       return state.models;
     case "mode":
       return MODE_CHOICES;
+    case "environment":
+      return state.environments;
     case "prompt":
       return [];
   }
@@ -176,7 +183,31 @@ export function chooseModel(state: WizardState, model: Choice): WizardState {
 }
 
 export function chooseMode(state: WizardState, mode: PermissionMode): WizardState {
-  return { ...state, mode, step: "prompt", cursor: 0 };
+  return {
+    ...state,
+    mode,
+    step: state.environments.length > 1 ? "environment" : "prompt",
+    cursor: 0,
+  };
+}
+
+/** Add existing BB environments without creating a project or workspace. */
+export function setEnvironments(state: WizardState, environments: Choice[]): WizardState {
+  return {
+    ...state,
+    environments,
+    step: state.step === "prompt" && environments.length > 1 ? "environment" : state.step,
+    cursor: 0,
+  };
+}
+
+export function chooseEnvironment(state: WizardState, choice: Choice): WizardState {
+  return {
+    ...state,
+    environmentId: choice.id === "default" ? null : choice.id,
+    step: "prompt",
+    cursor: 0,
+  };
 }
 
 export function setPrompt(state: WizardState, prompt: string): WizardState {
@@ -197,5 +228,6 @@ export function buildSpawnParams(state: WizardState, projectId: string): SpawnPa
     permissionMode: state.mode,
     reasoningLevel: state.reasoning,
     prompt: state.prompt.trim(),
+    ...(state.environmentId ? { environmentId: state.environmentId } : {}),
   };
 }

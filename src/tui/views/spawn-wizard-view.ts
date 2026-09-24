@@ -6,6 +6,7 @@ import type { View, ViewHost } from "../navigator.ts";
 import {
   applyPreset,
   buildSpawnParams,
+  chooseEnvironment,
   chooseMode,
   chooseModel,
   chooseProvider,
@@ -14,6 +15,7 @@ import {
   moveCursor,
   type PermissionMode,
   type SpawnPreset,
+  setEnvironments,
   setModels,
   setPrompt,
   stepChoices,
@@ -27,8 +29,9 @@ import { ListPanel, Screen } from "./chrome.ts";
 import { ThreadView } from "./thread-view.ts";
 
 const STEPS = ["provider", "model", "mode", "prompt"] as const;
+const ENVIRONMENT_STEPS = ["provider", "model", "mode", "environment", "prompt"] as const;
 const SELECT_HINTS = "↑/↓ move · enter select · esc back";
-const PROMPT_HINTS = "type your first message · enter send · esc back";
+const PROMPT_HINTS = "type your first message · shift+enter newline · enter send · esc back";
 
 /**
  * Fast-forward a fresh wizard to the shorthand preset: fetch the preset provider's
@@ -74,6 +77,8 @@ export class SpawnWizardView implements View {
     private readonly resolveProjectId: () => Promise<{ id: string; name: string }>,
     // New-thread defaults from the `bbchat <provider> …` shorthand, pre-seeded on mount.
     private readonly preset: SpawnPreset | null = null,
+    /** Known project id; omitted for a directory that is registered only on submit. */
+    private readonly projectId: string | null = null,
   ) {}
 
   async mount(host: ViewHost): Promise<void> {
@@ -108,6 +113,26 @@ export class SpawnWizardView implements View {
       const seeded = await seedWizardPreset(this.sdk, initWizard(providers), this.preset);
       this.state = seeded.state;
       if (seeded.error) this.screen?.setStatus(seeded.error, "error");
+      if (this.projectId) {
+        try {
+          const environments = await this.sdk.environments.list({ projectId: this.projectId });
+          const choices = [
+            { id: "default", label: "Project default" },
+            ...environments
+              .filter(
+                (environment) =>
+                  environment.status === "ready" && environment.lifecycle.phase === "active",
+              )
+              .map((environment) => ({
+                id: environment.id,
+                label: `${environment.name ?? environment.path ?? environment.id}${environment.branchName ? ` · ${environment.branchName}` : ""}`,
+              })),
+          ];
+          this.state = setEnvironments(this.state, choices);
+        } catch (error) {
+          this.screen?.setStatus(`error loading environments: ${errorText(error)}`, "error");
+        }
+      }
       this.render();
     } catch (error) {
       this.panel?.showMessage(`error loading providers: ${errorText(error)}`, "error");
@@ -190,6 +215,9 @@ export class SpawnWizardView implements View {
     } else if (state.step === "mode") {
       this.state = chooseMode(state, choice.id as PermissionMode);
       this.render();
+    } else if (state.step === "environment") {
+      this.state = chooseEnvironment(state, choice);
+      this.render();
     }
   }
 
@@ -218,19 +246,22 @@ export class SpawnWizardView implements View {
     const { screen, panel, promptBox, promptText } = this;
     if (!state || !screen || !panel || !promptBox || !promptText) return;
 
-    const stepNo = STEPS.indexOf(state.step) + 1;
-    screen.setTitle("new thread", `step ${stepNo}/${STEPS.length} · ${state.step}`);
+    const steps: readonly string[] = state.environments.length > 1 ? ENVIRONMENT_STEPS : STEPS;
+    const stepNo = steps.indexOf(state.step) + 1;
+    screen.setTitle("new thread", `step ${stepNo}/${steps.length} · ${state.step}`);
     screen.setContext([
       state.provider?.label ?? "",
       state.model?.label ?? "",
       state.reasoning ?? "",
       state.mode ?? "",
+      state.environmentId ?? "",
     ]);
 
     if (state.step === "prompt") {
       panel.root.visible = false;
       promptBox.visible = true;
       promptText.content = `❯ ${state.prompt}`;
+      promptBox.height = Math.min(10, Math.max(3, state.prompt.split("\n").length + 2));
       screen.setHints(PROMPT_HINTS);
       return;
     }

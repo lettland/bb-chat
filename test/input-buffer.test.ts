@@ -31,19 +31,38 @@ describe("InputBuffer", () => {
     expect(buf.handle({ name: "backspace" })).toEqual({ type: "update", value: "a" });
   });
 
-  test("enter submits and clears", () => {
+  test("enter submits and retains the draft until delivery succeeds", () => {
     const buf = new InputBuffer();
     buf.handle({ name: "h", sequence: "h" });
     buf.handle({ name: "i", sequence: "i" });
     expect(buf.handle({ name: "return" })).toEqual({ type: "submit", value: "hi" });
+    expect(buf.value).toBe("hi");
+  });
+
+  test("ignores control/meta chords", () => {
+    const buf = new InputBuffer();
+    expect(buf.handle({ name: "c", sequence: "c", ctrl: true })).toEqual({ type: "none" });
     expect(buf.value).toBe("");
   });
 
-  test("ignores control/meta chords and non-printables", () => {
+  test("edits across lines with a movable cursor", () => {
     const buf = new InputBuffer();
-    expect(buf.handle({ name: "c", sequence: "c", ctrl: true })).toEqual({ type: "none" });
-    expect(buf.handle({ name: "left" })).toEqual({ type: "none" });
-    expect(buf.value).toBe("");
+    buf.set("ab");
+    buf.handle({ name: "left" });
+    buf.handle({ name: "return", shift: true });
+    expect(buf.value).toBe("a\nb");
+    buf.handle({ name: "right" });
+    buf.handle({ name: "backspace" });
+    expect(buf.value).toBe("a\n");
+    expect(buf.handle({ name: "return" })).toEqual({ type: "submit", value: "a\n" });
+  });
+
+  test("accepts pasted text without terminal control sequences", () => {
+    const buf = new InputBuffer();
+    buf.handle({ name: "paste", sequence: "first\nsecond" });
+    expect(buf.value).toBe("first\nsecond");
+    expect(buf.handle({ name: "up", sequence: "\u001b[A" })).toEqual({ type: "none" });
+    expect(buf.value).toBe("first\nsecond");
   });
 
   test("clear empties the buffer", () => {
