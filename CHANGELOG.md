@@ -9,6 +9,8 @@ version it cuts on the next push to `master`.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-09-24
+
 ### Added
 
 - Project groups in the global home (`bbchat -g`): projects are listed under
@@ -74,7 +76,8 @@ ensure/health, project resolution, the global home, live thread list, streaming
 chat and composer, the spawn wizard, diff review, terminals, and plugin/skill
 listings.
 
-[Unreleased]: https://github.com/lettland/bb-chat/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/lettland/bb-chat/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/lettland/bb-chat/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/lettland/bb-chat/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/lettland/bb-chat/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/lettland/bb-chat/releases/tag/v0.1.0
