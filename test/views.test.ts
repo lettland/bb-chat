@@ -39,6 +39,17 @@ describe("BB actions added to the TUI", () => {
     await eventually(app.t, () => actions.includes("stop"));
   });
 
+  test("a no-argument thread action rejects extra text without clearing the draft", async () => {
+    const actions: string[] = [];
+    const app = await boot();
+    await app.navigator.push(new ThreadView(fakeSdk({ actions }), "thr_a", "thread"));
+    app.type("/clear extra");
+    app.press("return");
+    await app.shows("usage: /clear");
+    expect(actions).not.toContain("clear");
+    expect(await app.frame()).toContain("❯ /clear extra");
+  });
+
   test("an approval shows its command and resolves once", async () => {
     const resolved: unknown[] = [];
     const interactions: unknown[] = [
@@ -309,6 +320,21 @@ describe("BB actions added to the TUI", () => {
     await app.shows("shell");
   });
 
+  test("terminal close and restart require a second keypress", async () => {
+    const terminalCalls: string[] = [];
+    const app = await boot();
+    await app.navigator.push(new TerminalsView(fakeSdk({ terminalCalls }), "thr_a"));
+    app.press("x");
+    expect(terminalCalls).not.toContain("close");
+    app.press("x");
+    await eventually(app.t, () => terminalCalls.includes("close"));
+    await app.shows("terminal closed");
+    app.press("z");
+    expect(terminalCalls).not.toContain("restart");
+    app.press("z");
+    await eventually(app.t, () => terminalCalls.includes("restart"));
+  });
+
   test("threads can be pinned, archived, and restored from the archived list", async () => {
     const actions: string[] = [];
     const rows: unknown[] = [
@@ -365,6 +391,39 @@ describe("BB actions added to the TUI", () => {
     await app.shows("the flaky test");
     app.press("return");
     await eventually(app.t, () => app.navigator.current instanceof ThreadView);
+    app.press("escape");
+    await eventually(app.t, () => app.navigator.current instanceof ThreadSearchView);
+    await app.shows("the flaky test");
+  });
+
+  test("search keeps newer results when an older request finishes last", async () => {
+    const pending: { query: string; resolve: (value: unknown) => void }[] = [];
+    const searchHandler = (query: string): Promise<unknown> =>
+      new Promise((resolve) => pending.push({ query, resolve }));
+    const result = (title: string) => ({
+      active: {
+        total: 1,
+        results: [
+          { thread: { id: title, projectId: project.id, title, archivedAt: null }, matches: [] },
+        ],
+      },
+      archived: { total: 0, results: [] },
+    });
+    const app = await boot();
+    await app.navigator.push(new ThreadSearchView(fakeSdk({ searchHandler }), project.id));
+    app.type("old");
+    app.press("return");
+    await eventually(app.t, () => pending.length === 1);
+    for (let i = 0; i < 3; i++) app.press("backspace");
+    app.type("new");
+    app.press("return");
+    await eventually(app.t, () => pending.length === 2);
+    pending[1]?.resolve(result("new result"));
+    await app.shows("new result");
+    pending[0]?.resolve(result("old result"));
+    await app.t.renderOnce();
+    expect(await app.frame()).toContain("new result");
+    expect(await app.frame()).not.toContain("old result");
   });
 
   test("queued text can be edited and dispatched", async () => {
@@ -416,6 +475,28 @@ describe("BB actions added to the TUI", () => {
     expect(queueCalls).toHaveLength(0);
   });
 
+  test("queued message deletion requires confirmation", async () => {
+    const queueCalls: string[] = [];
+    const queued: unknown[] = [
+      {
+        id: "msg_delete",
+        updatedAt: 1,
+        editable: true,
+        content: [{ type: "text", text: "discard me", mentions: [] }],
+        payload: { kind: "inline" },
+        waitingOn: { kind: "thread-busy" },
+        failureReason: null,
+      },
+    ];
+    const app = await boot();
+    await app.navigator.push(new QueueView(fakeSdk({ queued, queueCalls }), "thr_a"));
+    app.press("d");
+    expect(queueCalls).not.toContain("delete");
+    app.press("d");
+    await eventually(app.t, () => queueCalls.includes("delete"));
+    await app.shows("no queued messages");
+  });
+
   test("diff review switches from working changes to the full branch", async () => {
     const diffTargets: string[] = [];
     const app = await boot();
@@ -449,6 +530,7 @@ interface StubOptions {
   environments?: unknown[];
   terminalCalls?: string[];
   searchResult?: unknown;
+  searchHandler?: (query: string) => Promise<unknown>;
   queued?: unknown[];
   queueCalls?: string[];
   diffTargets?: string[];
@@ -588,7 +670,8 @@ function fakeSdk(o: StubOptions = {}): BBSdk {
         o.actions?.push("unpin");
         return {};
       },
-      search: async () =>
+      search: async (args: { query: string }) =>
+        o.searchHandler?.(args.query) ??
         o.searchResult ?? {
           active: { total: 0, results: [] },
           archived: { total: 0, results: [] },

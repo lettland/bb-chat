@@ -273,6 +273,8 @@ export class ThreadView implements View {
   }
 
   private async runCommand(name: string, args: string): Promise<string | null> {
+    if (args && ["stop", "retry", "compact", "clear", "cancel-plan", "clear-goal"].includes(name))
+      throw new Error(`usage: /${name}`);
     switch (name) {
       case "exit":
       case "quit":
@@ -309,7 +311,7 @@ export class ThreadView implements View {
         return "";
       case "stop":
         await this.sdk.threads.stop({ threadId: this.threadId });
-        return "thread stopped";
+        return "stop requested";
       case "retry":
         await this.sdk.threads.retry({ threadId: this.threadId });
         return "retry requested";

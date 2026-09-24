@@ -70,7 +70,9 @@ export class InputBuffer {
     const isText =
       chars.length > 0 &&
       chars.every(
-        (char) => char === "\n" || (char.charCodeAt(0) >= 0x20 && char.charCodeAt(0) !== 0x7f),
+        (char) =>
+          char === "\n" ||
+          (char.charCodeAt(0) >= 0x20 && (char.charCodeAt(0) < 0x7f || char.charCodeAt(0) > 0x9f)),
       );
     if (isText && !key.ctrl && !key.meta) {
       this.chars.splice(this.cursor, 0, ...chars);

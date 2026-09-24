@@ -24,6 +24,8 @@ export class ThreadSearchView implements View {
   private hits: SearchHit[] = [];
   private selected = 0;
   private generation = 0;
+  private searchSeq = 0;
+  private searched = false;
 
   constructor(
     private readonly sdk: BBSdk,
@@ -39,7 +41,6 @@ export class ThreadSearchView implements View {
     });
     this.queryText = new TextRenderable(host.renderer, { content: "" });
     this.panel = new ListPanel(host.renderer);
-    this.panel.showMessage("type a query and press Enter");
     this.excerpt = new TextRenderable(host.renderer, { content: "" });
     screen.content.add(this.queryText);
     screen.content.add(this.panel.root);
@@ -47,6 +48,8 @@ export class ThreadSearchView implements View {
     this.screen = screen;
     this.box = screen.outer;
     host.renderer.root.add(screen.outer);
+    if (this.searched) this.showHits();
+    else this.panel.showMessage("type a query and press Enter");
     this.render();
   }
 
@@ -73,7 +76,10 @@ export class ThreadSearchView implements View {
     if (this.editing) {
       const action = this.input.handle(key);
       if (action.type === "submit") void this.search();
-      else if (action.type === "update") this.render();
+      else if (action.type === "update") {
+        this.searchSeq++;
+        this.render();
+      }
       return;
     }
     if (key.name === "up" || key.name === "k")
@@ -114,31 +120,40 @@ export class ThreadSearchView implements View {
     const query = this.input.value.trim();
     if (!query) return;
     const generation = this.generation;
+    const searchSeq = ++this.searchSeq;
     this.screen?.setStatus("searching…");
     try {
       const result = await this.sdk.threads.search({ query, limitPerGroup: "50" });
-      if (generation !== this.generation || !this.panel) return;
+      if (generation !== this.generation || searchSeq !== this.searchSeq || !this.panel) return;
       this.hits = [...result.active.results, ...result.archived.results].filter(
         (hit) => !this.projectId || hit.thread.projectId === this.projectId,
       );
-      this.selected = this.panel.setItems(
-        this.hits.map(
-          (hit) =>
-            `${hit.thread.archivedAt ? "[archived] " : ""}${hit.thread.title ?? hit.thread.titleFallback ?? hit.thread.id}`,
-        ),
-        this.projectId
-          ? "no matches in the returned results (BB limits each group to 50)"
-          : "no matching threads",
-      );
+      this.searched = true;
+      this.showHits();
       this.editing = false;
       this.screen?.setStatus("");
-      this.screen?.setContext([
-        `${this.hits.length} shown`,
-        this.projectId ? "this project" : "all projects",
-      ]);
       this.render();
     } catch (error) {
-      this.screen?.setStatus(`search failed: ${errorText(error)}`, "error");
+      if (generation === this.generation && searchSeq === this.searchSeq)
+        this.screen?.setStatus(`search failed: ${errorText(error)}`, "error");
     }
+  }
+
+  private showHits(): void {
+    if (!this.panel) return;
+    this.selected = this.panel.setItems(
+      this.hits.map(
+        (hit) =>
+          `${hit.thread.archivedAt ? "[archived] " : ""}${hit.thread.title ?? hit.thread.titleFallback ?? hit.thread.id}`,
+      ),
+      this.projectId
+        ? "no matches in the returned results (BB limits each group to 50)"
+        : "no matching threads",
+      this.selected,
+    );
+    this.screen?.setContext([
+      `${this.hits.length} shown`,
+      this.projectId ? "this project" : "all projects",
+    ]);
   }
 }

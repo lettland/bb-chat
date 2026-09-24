@@ -36,7 +36,7 @@ export class TerminalsView implements View {
   private selected = 0;
   private entering = false;
   private readonly input = new InputBuffer();
-  private pendingAction: "close" | "restart" | null = null;
+  private pendingAction: { action: "close" | "restart"; terminalId: string } | null = null;
   private busy = false;
 
   constructor(
@@ -49,7 +49,7 @@ export class TerminalsView implements View {
     const p = palette();
     const screen = new Screen(host.renderer, {
       title: "terminals",
-      hints: "↑/↓ select · enter send · n new · x close · z restart · r refresh · q back",
+      hints: "↑/↓ select · enter send · n new · x force close · z restart · r refresh · q back",
     });
     this.panel = new ListPanel(host.renderer, { flexGrow: 0, height: 1 });
     screen.content.add(this.panel.root);
@@ -145,7 +145,7 @@ export class TerminalsView implements View {
     this.screen?.setHints(
       this.entering
         ? "enter send command · esc cancel"
-        : "↑/↓ select · enter send · n new · x close · z restart · r refresh · q back",
+        : "↑/↓ select · enter send · n new · x force close · z restart · r refresh · q back",
     );
   }
 
@@ -189,10 +189,10 @@ export class TerminalsView implements View {
   private async confirmAction(action: "close" | "restart"): Promise<void> {
     const row = this.rows[this.selected];
     if (!row) return;
-    if (this.pendingAction !== action) {
-      this.pendingAction = action;
+    if (this.pendingAction?.action !== action || this.pendingAction.terminalId !== row.id) {
+      this.pendingAction = { action, terminalId: row.id };
       this.screen?.setStatus(
-        `press ${action === "close" ? "x" : "z"} again to ${action} ${row.title}`,
+        `press ${action === "close" ? "x again to force close" : "z again to restart"} ${row.title}`,
       );
       return;
     }

@@ -62,6 +62,7 @@ describe("InputBuffer", () => {
     buf.handle({ name: "paste", sequence: "first\nsecond" });
     expect(buf.value).toBe("first\nsecond");
     expect(buf.handle({ name: "up", sequence: "\u001b[A" })).toEqual({ type: "none" });
+    expect(buf.handle({ name: "paste", sequence: "\u009b2J" })).toEqual({ type: "none" });
     expect(buf.value).toBe("first\nsecond");
   });
 

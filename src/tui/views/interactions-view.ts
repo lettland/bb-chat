@@ -108,7 +108,7 @@ export function parseInteractionAnswer(interaction: Interaction, raw: string): J
   if (payload.questions.length !== 1) return { kind: "user_answer", answers: JSON.parse(raw) };
   const question = payload.questions[0];
   if (!question) throw new Error("question is missing");
-  if (raw.startsWith("{")) return { kind: "user_answer", answers: JSON.parse(raw) };
+  if (raw.trimStart().startsWith("{")) return { kind: "user_answer", answers: JSON.parse(raw) };
   const values = raw
     .split(",")
     .map((value) => value.trim())

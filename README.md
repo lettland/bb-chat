@@ -93,7 +93,7 @@ thread, `q` goes back from lists, and `ctrl+c` quits.
 In the project thread list, `i` pins or unpins, `x` twice archives, and `v`
 shows archived threads; `u` restores one. The diff view's `a` key switches
 between uncommitted changes and the whole branch. The terminal view sends
-commands with Enter, creates a session with `n`, and confirms close/restart
+commands with Enter, creates a session with `n`, and confirms force close/restart
 with a second `x`/`z`.
 
 **Project groups.** The global home gathers projects under the same named,
