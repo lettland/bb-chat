@@ -9,6 +9,15 @@ version it cuts on the next push to `master`.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-09-25
+
+### Changed
+
+- Show tool activity from completed BB turns
+- Restore distinct transcript role colors
+- Fix TUI review findings
+- Add BB thread and interaction controls to terminal client
+
 ## [0.1.3] - 2026-09-24
 
 ### Added
@@ -76,7 +85,8 @@ ensure/health, project resolution, the global home, live thread list, streaming
 chat and composer, the spawn wizard, diff review, terminals, and plugin/skill
 listings.
 
-[Unreleased]: https://github.com/lettland/bb-chat/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/lettland/bb-chat/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/lettland/bb-chat/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/lettland/bb-chat/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/lettland/bb-chat/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/lettland/bb-chat/compare/v0.1.0...v0.1.1
