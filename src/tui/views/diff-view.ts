@@ -6,9 +6,9 @@ import {
   StyledText,
   TextRenderable,
 } from "@opentui/core";
-import { getDiffFiles } from "../../bb/environments.ts";
+import { getDiffFiles, watchEnvironment } from "../../bb/environments.ts";
 import type { BBSdk } from "../../bb/sdk.ts";
-import { getThreadEnvironmentId } from "../../bb/threads.ts";
+import { getThreadEnvironmentId, type Unsubscribe } from "../../bb/threads.ts";
 import { renderDiffFiles } from "../diff-render.ts";
 import type { View, ViewHost } from "../navigator.ts";
 import { sanitizeText } from "../sanitize.ts";
@@ -32,6 +32,11 @@ export class DiffView implements View {
   private pane: ScrollBoxRenderable | null = null;
   private body: TextRenderable | null = null;
   private target: "uncommitted" | "all" = "uncommitted";
+  private unsub: Unsubscribe | null = null;
+  /** The environment this view is currently watching, or null before the first resolve. */
+  private environmentId: string | null = null;
+  /** In-flight lookup, shared by racing refreshes so they open one watch between them. */
+  private environmentLookup: Promise<string | null> | null = null;
 
   constructor(
     private readonly sdk: BBSdk,
@@ -56,6 +61,10 @@ export class DiffView implements View {
   }
 
   unmount(): void {
+    this.unsub?.();
+    this.unsub = null;
+    this.environmentId = null;
+    this.environmentLookup = null;
     if (this.box) {
       this.host.renderer.root.remove(this.box);
       this.box.destroy();
@@ -66,6 +75,10 @@ export class DiffView implements View {
     this.body = null;
     this.pane = null;
     this.screen = null;
+  }
+
+  onRealtimeResync(): void {
+    void this.refresh();
   }
 
   onKey(key: KeyEvent): void {
@@ -112,10 +125,44 @@ export class DiffView implements View {
     }
   }
 
+  /**
+   * The thread's environment, re-resolved on every refresh.
+   *
+   * `threads.update` cannot set `environmentId`, so a thread is not repointed at
+   * another environment on demand — but nothing here establishes that the id is
+   * fixed for the life of the view either, and a view pinned to a stale id would
+   * render the wrong environment's diff forever. Re-resolving costs one small GET
+   * on a refresh that already fetches a diff.
+   *
+   * Racing refreshes (there is no re-entrancy guard on `refresh`) share one
+   * lookup, and the watch is only re-opened when the id actually changes.
+   */
+  private resolveEnvironmentId(): Promise<string | null> {
+    this.environmentLookup ??= this.lookupEnvironment().finally(() => {
+      this.environmentLookup = null;
+    });
+    return this.environmentLookup;
+  }
+
+  private async lookupEnvironment(): Promise<string | null> {
+    const environmentId = await getThreadEnvironmentId(this.sdk, this.threadId);
+    if (!this.body) return null; // left the view mid-fetch
+    if (environmentId === this.environmentId) return environmentId;
+    this.unsub?.();
+    this.unsub = null;
+    this.environmentId = environmentId;
+    if (environmentId) {
+      this.unsub = watchEnvironment(this.sdk, environmentId, () => {
+        void this.refresh();
+      });
+    }
+    return environmentId;
+  }
+
   private async refresh(): Promise<void> {
     if (!this.body) return;
     try {
-      const environmentId = await getThreadEnvironmentId(this.sdk, this.threadId);
+      const environmentId = await this.resolveEnvironmentId();
       if (!this.body) return; // left the view mid-fetch
       if (!environmentId) {
         this.body.content = "this thread has no environment to diff";

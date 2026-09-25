@@ -81,6 +81,10 @@ export class GlobalHomeView implements View {
     this.generation += 1;
   }
 
+  onRealtimeResync(): void {
+    void this.refresh();
+  }
+
   onKey(key: KeyEvent): void {
     switch (key.name) {
       case "up":

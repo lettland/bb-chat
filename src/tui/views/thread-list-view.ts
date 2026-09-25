@@ -90,6 +90,10 @@ export class ThreadListView implements View {
     this.generation += 1;
   }
 
+  onRealtimeResync(): void {
+    void this.refresh();
+  }
+
   onKey(key: KeyEvent): void {
     if (key.name !== "x") this.pendingArchiveId = null;
     switch (key.name) {

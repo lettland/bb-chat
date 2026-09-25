@@ -87,7 +87,8 @@ In-app keys: `↑/↓` move · `enter` open/select · `n` new thread · `s` sear
 `p` plugins (global) / skills (project). In a thread, use `ctrl+i` for pending
 requests, `ctrl+q` for queued messages, `ctrl+o` for diffs, and `ctrl+t` for
 terminals. The composer uses `shift+enter` for a newline and retains a draft if
-delivery fails. Enter `/actions` for thread commands. `esc` goes back from a
+delivery fails. Enter `/actions` for thread commands, or `/refresh` to refetch
+the transcript by hand. `esc` goes back from a
 thread, `q` goes back from lists, and `ctrl+c` quits.
 
 In the project thread list, `i` pins or unpins, `x` twice archives, and `v`
@@ -95,6 +96,10 @@ shows archived threads; `u` restores one. The diff view's `a` key switches
 between uncommitted changes and the whole branch. The terminal view sends
 commands with Enter, creates a session with `n`, and confirms force close/restart
 with a second `x`/`z`.
+
+Live views refetch themselves when the BB server's realtime connection drops and
+comes back, and the diff view follows its environment — so a commit made outside
+the thread (by the auto-review plugin, or by hand) appears without a refresh.
 
 **Project groups.** The global home gathers projects under the same named,
 collapsible groups as the BB sidebar (e.g. *work*, or a set of linked repos).

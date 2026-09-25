@@ -132,6 +132,24 @@ export function watchProject(sdk: BBSdk, projectId: string, onChange: () => void
   return sdk.subscribe({ event: "project:changed", projectId, callback: () => onChange() });
 }
 
+/**
+ * Watch for a realtime socket that dropped and came back.
+ *
+ * BB's client reconnects on its own and re-arms its subscriptions, but it does
+ * NOT replay the `changed` events missed while it was down — so every update
+ * during an outage is lost for good. `reconnected` is true only when the socket
+ * re-opened after an unexpected close (false on the first connect), so this
+ * fires exactly when a resync is required and never on a healthy startup.
+ */
+export function watchConnection(sdk: BBSdk, onReconnect: () => void): Unsubscribe {
+  return sdk.subscribe({
+    event: "realtime:connection",
+    callback: (event) => {
+      if (event.reconnected) onReconnect();
+    },
+  });
+}
+
 /** The bits of a thread record the thread view shows in its header and status bar. */
 export interface ThreadMeta {
   title: string | null;

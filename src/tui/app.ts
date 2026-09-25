@@ -1,5 +1,6 @@
 import { ensureProject } from "../bb/project.ts";
 import type { BBSdk } from "../bb/sdk.ts";
+import { watchConnection } from "../bb/threads.ts";
 import { Navigator } from "./navigator.ts";
 import type { SpawnPreset } from "./spawn-wizard.ts";
 import { resolveThemeMode, setThemeMode } from "./theme.ts";
@@ -67,6 +68,11 @@ export async function runChat(ctx: ChatContext): Promise<void> {
   };
 
   const navigator = new Navigator({ renderer, exit: shutdown });
+  // BB's realtime client reconnects by itself but never replays the events missed
+  // while it was down, so every update during an outage is lost. One app-level
+  // watcher resyncs whichever view is on top; the handle is deliberately dropped
+  // because this subscription lives as long as the process.
+  watchConnection(ctx.sdk, () => navigator.resync());
   renderer.keyInput.on("keypress", (key) => {
     if (key.ctrl && key.name === "c") {
       shutdown();

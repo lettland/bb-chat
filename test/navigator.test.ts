@@ -128,4 +128,28 @@ describe("Navigator", () => {
     expect(nav.current).toBe(b);
     expect(a.unmounts).toBe(1);
   });
+
+  test("resync reaches only the top view, and tolerates one without the hook", async () => {
+    class ResyncableView extends FakeView {
+      resyncs = 0;
+      onRealtimeResync(): void {
+        this.resyncs++;
+      }
+    }
+    const { nav } = makeNavigator();
+    const under = new ResyncableView("under");
+    const top = new ResyncableView("top");
+    await nav.push(under);
+    await nav.push(top);
+    nav.resync();
+    expect(top.resyncs).toBe(1);
+    expect(under.resyncs).toBe(0); // an unmounted view has nothing to resync
+  });
+
+  test("resync is a no-op on a static view and on an empty stack", async () => {
+    const { nav } = makeNavigator();
+    expect(() => nav.resync()).not.toThrow();
+    await nav.push(new FakeView("static")); // FakeView has no onRealtimeResync
+    expect(() => nav.resync()).not.toThrow();
+  });
 });

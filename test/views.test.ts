@@ -506,6 +506,114 @@ describe("BB actions added to the TUI", () => {
     await eventually(app.t, () => diffTargets.includes("all"));
     await app.shows("whole branch");
   });
+
+  test("the diff view watches its environment, so an out-of-band commit shows up", async () => {
+    // A commit from the auto-review plugin (or a manual `git commit`) moves the
+    // environment's diff but emits no thread:changed — the view watches the
+    // environment itself, so the change lands without pressing `r`.
+    const diffTargets: string[] = [];
+    const subscribes: { event?: string; environmentId?: string; active: boolean }[] = [];
+    const app = await boot();
+    const view = new DiffView(fakeSdk({ diffTargets, subscribes }), "thr_a");
+    await app.navigator.push(view);
+    expect(subscribes).toHaveLength(1);
+    expect(subscribes[0]?.event).toBe("environment:changed");
+    expect(subscribes[0]?.environmentId).toBe("env_1");
+    expect(diffTargets).toEqual(["uncommitted"]);
+
+    await eventually(app.t, () => diffTargets.length === 1);
+    view.onRealtimeResync?.(); // stand in for the environment push
+    await eventually(app.t, () => diffTargets.length === 2);
+
+    // Remounting must not stack a second subscription on the same environment.
+    await app.navigator.pop();
+    expect(subscribes[0]?.active).toBe(false);
+    await app.navigator.push(new DiffView(fakeSdk({ diffTargets, subscribes }), "thr_a"));
+    expect(subscribes).toHaveLength(2);
+  });
+
+  test("refreshes racing the environment lookup share one subscription", async () => {
+    // `refresh` has no re-entrancy guard, so a keypress landing mid-lookup would
+    // otherwise open a second watch and orphan the first unsubscribe handle.
+    let release = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const subscribes: { event?: string; active: boolean }[] = [];
+    const app = await boot();
+    const pending = app.navigator.push(
+      new DiffView(fakeSdk({ subscribes, getGate: gate }), "thr_a"),
+    );
+    app.press("r");
+    app.navigator.resync();
+    app.press("a");
+    release();
+    await pending;
+    await eventually(app.t, () => subscribes.length > 0);
+    expect(subscribes).toHaveLength(1);
+  });
+
+  test("the diff view follows its thread onto a different environment", async () => {
+    // A view pinned to the id it first saw would render the previous
+    // environment's diff forever — the same silent staleness this fixes.
+    const subscribes: { environmentId?: string; active: boolean }[] = [];
+    const app = await boot();
+    const o: StubOptions & { subscribes: { environmentId?: string; active: boolean }[] } = {
+      subscribes,
+    };
+    await app.navigator.push(new DiffView(fakeSdk(o), "thr_a"));
+    expect(subscribes).toHaveLength(1);
+    expect(subscribes[0]?.environmentId).toBe("env_1");
+
+    o.environmentId = "env_2";
+    app.press("r");
+    await eventually(app.t, () => subscribes.length === 2);
+    expect(subscribes[0]?.active).toBe(false); // old watch released
+    expect(subscribes[1]?.environmentId).toBe("env_2");
+
+    // Losing the environment must release the watch, not open a targetless one.
+    o.environmentId = null;
+    app.press("r");
+    await eventually(app.t, () => subscribes[1]?.active === false);
+    expect(subscribes).toHaveLength(2);
+    await app.shows("this thread has no environment to diff");
+  });
+
+  test("a realtime reconnect resyncs the open view", async () => {
+    // BB drops the events missed while its socket was down, so a thread left open
+    // across an outage would otherwise show a frozen transcript forever.
+    let fetches = 0;
+    const app = await boot();
+    const sdk = fakeSdk({
+      timelineRows: () => {
+        fetches++;
+        return [{ kind: "conversation", role: "user", text: "hello", id: "m1" }];
+      },
+    });
+    await app.navigator.push(new ThreadView(sdk, "thr_a", "thread"));
+    expect(fetches).toBe(1);
+
+    app.navigator.resync();
+    await eventually(app.t, () => fetches === 2);
+  });
+
+  test("/refresh refetches the timeline on demand", async () => {
+    let fetches = 0;
+    const app = await boot();
+    const sdk = fakeSdk({
+      timelineRows: () => {
+        fetches++;
+        return [{ kind: "conversation", role: "user", text: "hello", id: "m1" }];
+      },
+    });
+    await app.navigator.push(new ThreadView(sdk, "thr_a", "thread"));
+    expect(fetches).toBe(1);
+
+    app.type("/refresh");
+    app.press("return");
+    await app.shows("refreshed");
+    expect(fetches).toBe(2);
+  });
 });
 
 const THREADS = [
@@ -536,6 +644,8 @@ interface StubOptions {
   diffTargets?: string[];
   /** Receives the realtime callback so a test can simulate a server push. */
   onSubscribe?: (callback: () => void) => void;
+  /** Every realtime subscription the view opened, so a test can push or unsubscribe. */
+  subscribes?: { event?: string; environmentId?: string; active: boolean }[];
   providersError?: Error;
   modelsError?: Error;
   spawnResult?: unknown;
@@ -544,6 +654,8 @@ interface StubOptions {
   terminalsError?: Error;
   outputError?: Error;
   environmentId?: string | null;
+  /** Holds `threads.get` open, so a test can race refreshes against the lookup. */
+  getGate?: Promise<void>;
   diffError?: Error;
   skillsError?: Error;
   pluginsError?: Error;
@@ -579,6 +691,7 @@ function fakeSdk(o: StubOptions = {}): BBSdk {
       },
       get: async () => {
         fail(o.metaError);
+        await o.getGate;
         return {
           title: "Fix the flaky test",
           providerId: "claude-code",
@@ -793,9 +906,13 @@ function fakeSdk(o: StubOptions = {}): BBSdk {
         };
       },
     },
-    subscribe: (s: { callback: () => void }) => {
+    subscribe: (s: { event?: string; environmentId?: string; callback: () => void }) => {
       o.onSubscribe?.(s.callback);
-      return () => {};
+      const record = { event: s.event, environmentId: s.environmentId, active: true };
+      o.subscribes?.push(record);
+      return () => {
+        record.active = false;
+      };
     },
   } as unknown as BBSdk;
 }
@@ -1501,8 +1618,14 @@ describe("SpawnWizardView interaction", () => {
 describe("DiffView / SkillsView / PluginsView states", () => {
   test("diff: no environment, a fetch error, refresh, and back", async () => {
     const none = await boot();
-    await none.navigator.push(new DiffView(fakeSdk({ environmentId: null }), "thr_a"));
+    const noEnvSubscribes: { active: boolean }[] = [];
+    await none.navigator.push(
+      new DiffView(fakeSdk({ environmentId: null, subscribes: noEnvSubscribes }), "thr_a"),
+    );
     await none.shows("this thread has no environment to diff");
+    // A thread with no environment has nothing to watch — never open a targetless
+    // `environment:changed` subscription for it.
+    expect(noEnvSubscribes).toHaveLength(0);
 
     const broken = await boot();
     await broken.navigator.push(new DiffView(fakeSdk({ diffError: new Error("git") }), "thr_a"));

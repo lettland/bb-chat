@@ -28,7 +28,7 @@ import { TerminalsView } from "./terminals-view.ts";
 const MAX_OUTPUT_LINES = 200;
 /** Hints, most important first (narrow terminals drop from the end). */
 function hints(isRoot: boolean): string {
-  return `tab select · ctrl+e expand · ${isRoot ? "esc quit" : "esc back"} · ctrl+i requests · ctrl+q queue · ctrl+o diff`;
+  return `tab select · ctrl+e expand · ${isRoot ? "esc quit" : "esc back"} · ctrl+i requests · ctrl+q queue · ctrl+o diff · /refresh`;
 }
 
 interface ThreadLayout {
@@ -117,6 +117,7 @@ export class ThreadView implements View {
     "clear",
     "cancel-plan",
     "clear-goal",
+    "refresh",
     "model",
     "reasoning",
     "queue",
@@ -189,6 +190,10 @@ export class ThreadView implements View {
     this.generation += 1;
     this.refreshing = false;
     this.refreshQueued = false;
+  }
+
+  onRealtimeResync(): void {
+    void this.refresh();
   }
 
   onKey(key: KeyEvent): void {
@@ -273,7 +278,10 @@ export class ThreadView implements View {
   }
 
   private async runCommand(name: string, args: string): Promise<string | null> {
-    if (args && ["stop", "retry", "compact", "clear", "cancel-plan", "clear-goal"].includes(name))
+    if (
+      args &&
+      ["stop", "retry", "compact", "clear", "cancel-plan", "clear-goal", "refresh"].includes(name)
+    )
       throw new Error(`usage: /${name}`);
     switch (name) {
       case "exit":
@@ -284,6 +292,11 @@ export class ThreadView implements View {
       case "back":
         void this.host.navigator.pop();
         return "";
+      case "refresh":
+        // A manual escape hatch for stale state the realtime stream can't cover —
+        // e.g. a turn that finished while the socket was down. No fetch here:
+        // `submit` already refetches after any action that returns a status.
+        return "refreshed";
       case "diff":
         void this.host.navigator.push(new DiffView(this.sdk, this.threadId));
         return "";

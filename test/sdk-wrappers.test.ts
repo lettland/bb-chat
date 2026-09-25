@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { watchEnvironment } from "../src/bb/environments.ts";
 import { ensureProject, findProject, listProjects } from "../src/bb/project.ts";
 import { listModels, listProviders, spawnThread } from "../src/bb/providers.ts";
 import type { BBSdk } from "../src/bb/sdk.ts";
@@ -8,6 +9,7 @@ import {
   getTimelineRows,
   listThreads,
   sendText,
+  watchConnection,
   watchProject,
   watchThread,
 } from "../src/bb/threads.ts";
@@ -259,5 +261,44 @@ describe("threads", () => {
     expect(subs.map((s) => s.event)).toEqual(["thread:changed", "project:changed"]);
     for (const s of subs) s.callback();
     expect(changes).toBe(2);
+  });
+
+  test("watchConnection fires only on a reconnect, not the first connect", () => {
+    // BB replays no events missed while the socket was down, so a resync is
+    // needed exactly when `reconnected` is true — and never on a healthy start.
+    const callbacks: ((event: { reconnected: boolean }) => void)[] = [];
+    const sdk = {
+      subscribe: (s: { event: string; callback: (event: { reconnected: boolean }) => void }) => {
+        expect(s.event).toBe("realtime:connection");
+        callbacks.push(s.callback);
+        return () => {};
+      },
+    } as unknown as BBSdk;
+
+    let resyncs = 0;
+    watchConnection(sdk, () => resyncs++);
+    expect(callbacks).toHaveLength(1);
+    callbacks[0]?.({ reconnected: false });
+    expect(resyncs).toBe(0);
+    callbacks[0]?.({ reconnected: true });
+    expect(resyncs).toBe(1);
+  });
+
+  test("watchEnvironment subscribes to that environment's changes", () => {
+    const subs: { event: string; environmentId?: string; callback: () => void }[] = [];
+    const sdk = {
+      subscribe: (s: { event: string; environmentId?: string; callback: () => void }) => {
+        subs.push(s);
+        return () => {};
+      },
+    } as unknown as BBSdk;
+
+    let changes = 0;
+    watchEnvironment(sdk, "env_1", () => changes++);
+    expect(subs).toHaveLength(1);
+    expect(subs[0]?.event).toBe("environment:changed");
+    expect(subs[0]?.environmentId).toBe("env_1");
+    subs[0]?.callback();
+    expect(changes).toBe(1);
   });
 });

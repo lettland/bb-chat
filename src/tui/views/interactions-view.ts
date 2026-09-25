@@ -196,6 +196,10 @@ export class InteractionsView implements View {
     this.generation++;
   }
 
+  onRealtimeResync(): void {
+    void this.refresh();
+  }
+
   onKey(key: KeyEvent): void {
     if (key.name === "escape") {
       if (this.answering) {

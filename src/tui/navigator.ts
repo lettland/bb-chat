@@ -19,6 +19,15 @@ export interface View {
   mount(host: ViewHost): void | Promise<void>;
   unmount(): void;
   onKey(key: KeyEvent): void;
+  /**
+   * Re-fetch server-backed state, called when the realtime socket reconnected
+   * after an outage (see `watchConnection`) — BB drops the `changed` events
+   * missed while it was down, so a view showing live data is stale until it
+   * refetches. Optional: only views that render server state need it, and
+   * implementing it must not disturb local state (composer draft, scroll,
+   * selection), since a resync can land at any moment.
+   */
+  onRealtimeResync?(): void;
 }
 
 export interface NavigatorDeps {
@@ -93,5 +102,14 @@ export class Navigator {
   /** Route a keypress to the top view. */
   handleKey(key: KeyEvent): void {
     this.current?.onKey(key);
+  }
+
+  /**
+   * Tell the top view to refetch after a realtime reconnect. A no-op for views
+   * that render no server state (and for an empty stack), so it is safe to call
+   * unconditionally from the app-level connection watcher.
+   */
+  resync(): void {
+    this.current?.onRealtimeResync?.();
   }
 }
