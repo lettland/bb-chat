@@ -184,6 +184,38 @@ describe("threads", () => {
     expect(calls).toHaveLength(3);
   });
 
+  test("getTimelineRows includes tool work inside completed turns on every page", async () => {
+    const { sdk, calls } = recordingSdk({
+      threads: {
+        timeline: async (raw) => {
+          const args = raw as { beforeAnchorSeq?: string; includeNestedRows?: string };
+          const older = args.beforeAnchorSeq === "2";
+          const id = older ? "old" : "new";
+          const children: unknown[] = [{ kind: "conversation", role: "assistant", text: id }];
+          if (args.includeNestedRows === "true") {
+            children.push({ kind: "work", workKind: "command", command: `run ${id}` });
+          }
+          return {
+            rows: [{ kind: "turn", id, children }],
+            timelinePage: older
+              ? { hasOlderRows: false }
+              : { hasOlderRows: true, olderCursor: { anchorSeq: 2, anchorId: "old" } },
+          };
+        },
+      },
+    });
+    const rows = await getTimelineRows(sdk, "thr_1");
+    expect(
+      rows.map((row) => (row as { children: { kind: string }[] }).children.map((c) => c.kind)),
+    ).toEqual([
+      ["conversation", "work"],
+      ["conversation", "work"],
+    ]);
+    expect(
+      calls.map(([, args]) => (args as { includeNestedRows?: string }).includeNestedRows),
+    ).toEqual(["true", "true"]);
+  });
+
   test("getTimelineRows tolerates a response without rows or page metadata", async () => {
     const { sdk } = recordingSdk({ threads: { timeline: async () => ({}) } });
     expect(await getTimelineRows(sdk, "thr_1")).toEqual([]);

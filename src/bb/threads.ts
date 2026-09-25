@@ -43,7 +43,8 @@ function rowId(row: unknown): string | null {
 }
 
 /**
- * Fetch a thread's FULL rendered timeline by paginating backward through segments
+ * Fetch a thread's FULL rendered timeline, including work nested in completed
+ * turns, by paginating backward through segments
  * (`timelinePage.olderCursor`), newest fetched first then older pages prepended —
  * the same "whole thread" traversal as `bb thread log --all`. De-duplicates rows
  * by id at segment boundaries and stops at MAX_PAGES or when a page adds nothing.
@@ -53,7 +54,12 @@ export async function getTimelineRows(
   threadId: string,
   signal?: AbortSignal,
 ): Promise<unknown[]> {
-  const first = await sdk.threads.timeline({ threadId, segmentLimit: PAGE_SEGMENT_LIMIT, signal });
+  const first = await sdk.threads.timeline({
+    threadId,
+    segmentLimit: PAGE_SEGMENT_LIMIT,
+    includeNestedRows: "true",
+    signal,
+  });
   let rows = pageRows(first);
   const seen = new Set<string>();
   for (const row of rows) {
@@ -69,6 +75,7 @@ export async function getTimelineRows(
       segmentLimit: PAGE_SEGMENT_LIMIT,
       beforeAnchorSeq: String(cursor.anchorSeq),
       beforeAnchorId: cursor.anchorId,
+      includeNestedRows: "true",
       signal,
     });
     const olderRows = pageRows(older).filter((row) => {
