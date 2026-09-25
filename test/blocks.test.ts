@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { BoxRenderable } from "@opentui/core";
 import { createTestRenderer } from "@opentui/core/testing";
+import { setThemeMode, toneColor } from "../src/tui/theme.ts";
 import { type Block, buildBlocks } from "../src/tui/timeline-model.ts";
 import {
   type BlockOpts,
@@ -78,6 +79,41 @@ describe("mountBlock / reconcileBlocks", () => {
     expect(frame).toContain("assistant");
     expect(frame).toContain("go test");
     expect(frame).toContain("src/a.ts");
+  });
+
+  test("paints user, assistant, and tool content in distinct role colors", async () => {
+    setThemeMode("dark");
+    const { t, container } = await setup();
+    const blocks = buildBlocks([
+      { kind: "conversation", role: "user", text: "USER_COLOR", id: "user" },
+      { kind: "conversation", role: "assistant", text: "ASSISTANT_COLOR", id: "assistant" },
+      { kind: "work", workKind: "tool", toolName: "TOOL_COLOR", id: "tool" },
+    ]);
+    reconcileBlocks(t.renderer, container, new Map(), blocks, noSelection);
+
+    // MarkdownRenderable parses asynchronously; wait for its body before reading cells.
+    for (let attempt = 0; attempt < 50; attempt++) {
+      await t.renderOnce();
+      if (t.captureCharFrame().includes("ASSISTANT_COLOR")) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    const colorOf = (marker: string) => {
+      const span = t
+        .captureSpans()
+        .lines.flatMap((line) => line.spans)
+        .find((s) => s.text.includes(marker));
+      expect(span).toBeDefined();
+      return span?.fg.toInts().slice(0, 3);
+    };
+    const rgb = (hex: string) =>
+      [1, 3, 5].map((index) => Number.parseInt(hex.slice(index, index + 2), 16));
+    expect(colorOf("USER_COLOR")).toEqual(rgb(toneColor("user")));
+    expect(colorOf("ASSISTANT_COLOR")).toEqual(rgb(toneColor("assistant")));
+    expect(colorOf("TOOL_COLOR")).toEqual(rgb(toneColor("toolcall")));
+    expect(new Set([toneColor("user"), toneColor("assistant"), toneColor("toolcall")]).size).toBe(
+      3,
+    );
   });
 
   test("mountBlock sets the block id on its root renderable (for scroll-into-view)", () => {

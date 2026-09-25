@@ -49,12 +49,12 @@ describe("theme palette completeness", () => {
 });
 
 describe("active-mode resolvers", () => {
-  test("default mode is dark and matches the legacy transcript hexes", () => {
+  test("default dark mode keeps distinct transcript role colors", () => {
     setThemeMode("dark");
     expect(getThemeMode()).toBe("dark");
-    // Contract preserved from the pre-theme TONE_COLOR table.
     expect(toneColor("user")).toBe("#4EC9B0");
-    expect(toneColor("assistant")).toBe("#E6E6E6");
+    expect(toneColor("assistant")).toBe("#C586C0");
+    expect(toneColor("toolcall")).toBe("#7AA8F5");
     expect(toneColor("meta")).toBe("#4B5263");
     expect(accentColor()).toBe("#4EC9B0");
     expect(amberColor()).toBe("#E5C07B");

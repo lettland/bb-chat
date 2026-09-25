@@ -143,6 +143,7 @@ function mountMessage(renderer: Renderer, block: MessageBlock): MountedBlock {
   if (isAssistant) {
     const md = new MarkdownRenderable(renderer, {
       content: block.text.length > 0 ? block.text : " ",
+      fg: toneColor("assistant"),
       syntaxStyle: syntaxStyle(),
       treeSitterClient: getTreeSitterClient(),
       streaming: block.streaming,

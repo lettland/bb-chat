@@ -46,8 +46,8 @@ export interface Palette {
 const DARK: Palette = {
   tone: {
     user: "#4EC9B0", // teal — you (the human)
-    assistant: "#E6E6E6", // near-white — the assistant
-    toolcall: "#569CD6", // blue — tool / command calls
+    assistant: "#C586C0", // purple — the assistant
+    toolcall: "#7AA8F5", // blue — tool / command calls
     agent: "#C586C0", // purple — subagent / workflow invocations
     edit: "#89D185", // green — file edits
     output: "#808893", // gray — tool output (the response)
@@ -75,7 +75,7 @@ const DARK: Palette = {
     default: "#3A3F4B",
     focus: "#4EC9B0",
     user: "#4EC9B0",
-    assistant: "#5A6373",
+    assistant: "#C586C0",
   },
   accent: "#4EC9B0",
   amber: "#E5C07B",
@@ -84,8 +84,8 @@ const DARK: Palette = {
 const LIGHT: Palette = {
   tone: {
     user: "#0E7C66",
-    assistant: "#1B1F24",
-    toolcall: "#1A66C2",
+    assistant: "#9C27B0",
+    toolcall: "#2457B9",
     agent: "#9C27B0",
     edit: "#2E7D32",
     output: "#5A626B",
@@ -113,7 +113,7 @@ const LIGHT: Palette = {
     default: "#C7CCD4",
     focus: "#0E7C66",
     user: "#0E7C66",
-    assistant: "#B3BAC5",
+    assistant: "#9C27B0",
   },
   accent: "#0E7C66",
   amber: "#9A6A00",
