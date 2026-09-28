@@ -9,6 +9,12 @@ version it cuts on the next push to `master`.
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-09-28
+
+### Changed
+
+- Refetch live views after a realtime reconnect
+
 ## [0.1.4] - 2026-09-25
 
 ### Changed
@@ -85,7 +91,8 @@ ensure/health, project resolution, the global home, live thread list, streaming
 chat and composer, the spawn wizard, diff review, terminals, and plugin/skill
 listings.
 
-[Unreleased]: https://github.com/lettland/bb-chat/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/lettland/bb-chat/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/lettland/bb-chat/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/lettland/bb-chat/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/lettland/bb-chat/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/lettland/bb-chat/compare/v0.1.1...v0.1.2
