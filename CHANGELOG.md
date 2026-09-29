@@ -9,6 +9,12 @@ version it cuts on the next push to `master`.
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-09-29
+
+### Changed
+
+- Fix aislop scan findings in the TUI
+
 ## [0.1.5] - 2026-09-28
 
 ### Changed
@@ -91,7 +97,8 @@ ensure/health, project resolution, the global home, live thread list, streaming
 chat and composer, the spawn wizard, diff review, terminals, and plugin/skill
 listings.
 
-[Unreleased]: https://github.com/lettland/bb-chat/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/lettland/bb-chat/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/lettland/bb-chat/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/lettland/bb-chat/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/lettland/bb-chat/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/lettland/bb-chat/compare/v0.1.2...v0.1.3
