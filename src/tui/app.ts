@@ -60,10 +60,14 @@ export async function runChat(ctx: ChatContext): Promise<void> {
     exiting = true;
     try {
       process.stdin.setRawMode?.(false);
-    } catch {}
+    } catch {
+      // stdin may be closed or not a TTY.
+    }
     try {
       process.stdout.write(RESTORE);
-    } catch {}
+    } catch {
+      // a closed stdout can't be restored; exit anyway.
+    }
     process.exit(0);
   };
 

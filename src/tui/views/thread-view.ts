@@ -10,7 +10,6 @@ import {
 } from "../../bb/threads.ts";
 import { InputBuffer } from "../input-buffer.ts";
 import type { View, ViewHost } from "../navigator.ts";
-import { REASONING_LEVELS } from "../spawn-wizard.ts";
 import { palette, toneColor } from "../theme.ts";
 import { type Block, buildBlocks, isTimelineActive, selectableIds } from "../timeline-model.ts";
 import { ToolSelection } from "../tool-selection.ts";
@@ -20,9 +19,9 @@ import { type BlockOpts, type MountedBlock, reconcileBlocks } from "./blocks.ts"
 import { Screen } from "./chrome.ts";
 import { DiffView } from "./diff-view.ts";
 import { InteractionsView } from "./interactions-view.ts";
-import { MessageView } from "./message-view.ts";
 import { QueueView } from "./queue-view.ts";
 import { TerminalsView } from "./terminals-view.ts";
+import { runThreadCommand, THREAD_COMMANDS } from "./thread-commands.ts";
 
 /** Cap on output/patch lines shown when a row is expanded. */
 const MAX_OUTPUT_LINES = 200;
@@ -97,32 +96,6 @@ function threadContext(meta: ThreadMeta | null): string[] {
  * across expandable rows and Ctrl+E expands the selected one.
  */
 export class ThreadView implements View {
-  /** Composer inputs intercepted as commands; everything else (incl. "/paths") sends. */
-  private static readonly COMMANDS = new Set([
-    "exit",
-    "quit",
-    "q",
-    "back",
-    "diff",
-    "terminals",
-    "term",
-    "interactions",
-    "requests",
-    "queued",
-    "help",
-    "actions",
-    "stop",
-    "retry",
-    "compact",
-    "clear",
-    "cancel-plan",
-    "clear-goal",
-    "refresh",
-    "model",
-    "reasoning",
-    "queue",
-    "steer",
-  ]);
   readonly title = "thread";
   private host!: ViewHost;
   private box: BoxRenderable | null = null;
@@ -278,91 +251,16 @@ export class ThreadView implements View {
   }
 
   private async runCommand(name: string, args: string): Promise<string | null> {
-    if (
-      args &&
-      ["stop", "retry", "compact", "clear", "cancel-plan", "clear-goal", "refresh"].includes(name)
-    )
-      throw new Error(`usage: /${name}`);
-    switch (name) {
-      case "exit":
-      case "quit":
-      case "q":
-        this.host.exit();
-        return "";
-      case "back":
-        void this.host.navigator.pop();
-        return "";
-      case "refresh":
-        // A manual escape hatch for stale state the realtime stream can't cover —
-        // e.g. a turn that finished while the socket was down. No fetch here:
-        // `submit` already refetches after any action that returns a status.
-        return "refreshed";
-      case "diff":
-        void this.host.navigator.push(new DiffView(this.sdk, this.threadId));
-        return "";
-      case "terminals":
-      case "term":
-        void this.host.navigator.push(new TerminalsView(this.sdk, this.threadId));
-        return "";
-      case "interactions":
-      case "requests":
-        void this.host.navigator.push(new InteractionsView(this.sdk, this.threadId));
-        return "";
-      case "queued":
-        void this.host.navigator.push(new QueueView(this.sdk, this.threadId));
-        return "";
-      case "actions":
-        void this.host.navigator.push(
-          new MessageView("thread actions", [
-            "/requests: pending approvals, questions and forms",
-            "/queued: inspect, edit and dispatch queued messages",
-            "/stop · /retry · /compact · /clear · /cancel-plan · /clear-goal",
-            "/model <id> · /reasoning <level>",
-            "/queue <text> · /steer <text>",
-          ]),
-        );
-        return "";
-      case "stop":
-        await this.sdk.threads.stop({ threadId: this.threadId });
-        return "stop requested";
-      case "retry":
-        await this.sdk.threads.retry({ threadId: this.threadId });
-        return "retry requested";
-      case "compact":
-        await this.sdk.threads.compact({ threadId: this.threadId });
-        return "compaction requested";
-      case "clear":
-        await this.sdk.threads.clearContext({ threadId: this.threadId });
-        return "context cleared";
-      case "cancel-plan":
-        await this.sdk.threads.cancelPlan({ threadId: this.threadId });
-        return "plan cancelled";
-      case "clear-goal":
-        await this.sdk.threads.clearGoal({ threadId: this.threadId });
-        return "goal cleared";
-      case "model":
-        if (!args) throw new Error("usage: /model <model id>");
-        await this.sdk.threads.update({ threadId: this.threadId, model: args });
-        return `model set to ${args}`;
-      case "reasoning":
-        if (!REASONING_LEVELS.some((level) => level === args))
-          throw new Error("usage: /reasoning <level>");
-        await this.sdk.threads.update({
-          threadId: this.threadId,
-          reasoningLevel: args as (typeof REASONING_LEVELS)[number],
-        });
-        return `reasoning set to ${args}`;
-      case "queue":
-      case "steer": {
-        if (!args) throw new Error(`usage: /${name} <text>`);
-        const mode = name === "queue" ? "queue-if-active" : "steer";
-        const result = await sendText(this.sdk, this.threadId, args, mode);
-        return result.delivery === "queued" ? "message queued" : "message sent";
-      }
-      default:
-        this.showHelp();
-        return null;
-    }
+    return runThreadCommand(
+      {
+        host: this.host,
+        sdk: this.sdk,
+        threadId: this.threadId,
+        onUnknown: () => this.showHelp(),
+      },
+      name,
+      args,
+    );
   }
 
   private renderComposer(): void {
@@ -386,7 +284,7 @@ export class ThreadView implements View {
     this.screen?.setStatus("sending…");
     try {
       const status =
-        command && ThreadView.COMMANDS.has(command.name)
+        command && THREAD_COMMANDS.has(command.name)
           ? await this.runCommand(command.name, command.args)
           : (await sendText(this.sdk, this.threadId, trimmed)).delivery === "queued"
             ? "message queued"
@@ -397,7 +295,7 @@ export class ThreadView implements View {
       if (status !== null) await this.refresh();
     } catch (error) {
       this.screen?.setStatus(
-        `${command && ThreadView.COMMANDS.has(command.name) ? "action" : "send"} failed: ${errorText(error)}`,
+        `${command && THREAD_COMMANDS.has(command.name) ? "action" : "send"} failed: ${errorText(error)}`,
         "error",
       );
     } finally {

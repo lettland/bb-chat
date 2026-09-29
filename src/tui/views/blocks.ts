@@ -361,7 +361,7 @@ export function reconcileBlocks(
   const orderUnchanged =
     current.length === ordered.length && ordered.every((m, i) => current[i] === m.root);
   if (!orderUnchanged) {
-    for (const child of [...current]) container.remove(child);
+    for (const child of current) container.remove(child);
     for (const mounted of ordered) container.add(mounted.root);
   }
 
